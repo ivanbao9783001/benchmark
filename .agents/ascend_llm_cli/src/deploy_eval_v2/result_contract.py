@@ -21,8 +21,11 @@ def evaluation_result(result,*,task_id,operation_id,service_id,case_id):
             raise ProtocolError('RECOVERY_REQUIRED: evaluation result identity mismatch')
         value[key]=expected
     value.setdefault('time',now())
+    # Results written before the accuracy branch existed remain performance results.
+    value.setdefault('evaluation_type','perf')
     if next(validator().iter_errors(value),None) is not None:
         raise ProtocolError('INVALID_INPUT: evaluation result schema')
-    if value['performance_validity']=='VERIFIED' and value['evidence_status']!='COMPLETE':
-        raise ProtocolError('INVALID_INPUT: verified performance requires complete evidence')
+    validity = 'performance_validity' if value['evaluation_type']=='perf' else 'accuracy_validity'
+    if value[validity]=='VERIFIED' and value['evidence_status']!='COMPLETE':
+        raise ProtocolError('INVALID_INPUT: verified evaluation requires complete evidence')
     return value

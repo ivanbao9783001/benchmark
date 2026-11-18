@@ -24,7 +24,7 @@ def owned_eval_inputs(plan,bindings,service):
     adapted['service']['health_path'] = service.get('health_path', entry['checks']['health'])
     if 'metrics' in service:
         adapted['service']['metrics']=service['metrics']
-    if any(case['reset_cache'] for case in evaluation['cases']):
+    if any(case.get('reset_cache', False) for case in evaluation['cases']):
         adapted['service']['permissions']['reset_cache']=True
         adapted['service']['reset_targets']=[dict(id=item['id'],metrics_url=item['url'],
             url=item['url'].removesuffix('/metrics')+'/reset_prefix_cache') for item in service.get('metrics',[])]

@@ -74,16 +74,21 @@ class ExternalExecutor:
                 service_id=self.service_id,case_id=command['case_id'])
             data['result_sha256'] = persist(evidence, result)
             data.update(execution_status=result['execution_status'],
-                        evidence_status=result['evidence_status'],
-                        performance_validity=result['performance_validity'])
+                        evidence_status=result['evidence_status'])
+            validity = 'performance' if result['evaluation_type'] == 'perf' else 'accuracy'
+            data[validity+'_validity'] = result[validity+'_validity']
             return 'evaluation.completed', 'EVALUATED', data
         except Exception as error:
             with DiagnosticStream((operation_root/'error.log')) as stream:
                 traceback.print_exc(file=stream)
             stopped = isinstance(error, Cancelled)
+            case = next((c for c in values['plan.json']['cases']
+                         if c['case_id'] == command['case_id']), {})
+            mode = case.get('mode', 'perf')
+            validity = 'performance_validity' if mode == 'perf' else 'accuracy_validity'
             result = dict(task_id=self.task_id, operation_id=operation,
                           execution_status='CANCELLED' if stopped else 'FAILED',
-                          evidence_status='PARTIAL', performance_validity='UNVERIFIED',
+                          evidence_status='PARTIAL', evaluation_type=mode, **{validity: 'UNVERIFIED'},
                           external_service_action='NONE', cleanup_status='UNVERIFIED',
                           error_ref='task.jsonl')
             result=evaluation_result(result,task_id=self.task_id,operation_id=operation,

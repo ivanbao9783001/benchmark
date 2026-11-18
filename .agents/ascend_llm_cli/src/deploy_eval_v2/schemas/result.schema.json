@@ -10,11 +10,17 @@
     "time",
     "execution_status",
     "evidence_status",
-    "performance_validity"
+    "evaluation_type"
   ],
   "properties": {
     "schema_version": {
       "const": "1.0"
+    },
+    "evaluation_type": {
+      "enum": [
+        "perf",
+        "acc"
+      ]
     },
     "task_id": {
       "$ref": "#/$defs/id"
@@ -53,6 +59,65 @@
         "UNVERIFIED",
         "INVALID"
       ]
+    },
+    "accuracy_validity": {
+      "enum": [
+        "VERIFIED",
+        "UNVERIFIED",
+        "INVALID"
+      ]
+    },
+    "accuracy": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "status",
+        "task",
+        "dataset",
+        "metric",
+        "unit",
+        "value",
+        "num_samples",
+        "scope"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "VERIFIED",
+            "UNVERIFIED"
+          ]
+        },
+        "metric": {
+          "const": "accuracy"
+        },
+        "unit": {
+          "const": "percent"
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "num_samples": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "accuracy_evidence": {
+      "type": "object",
+      "required": [
+        "host",
+        "path"
+      ],
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      }
     },
     "actual_load": {
       "type": "object"
@@ -137,6 +202,51 @@
       ]
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "evaluation_type": {
+            "const": "perf"
+          }
+        },
+        "required": [
+          "evaluation_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "performance_validity"
+        ]
+      },
+      "else": {
+        "required": [
+          "accuracy_validity"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "evaluation_type": {
+            "const": "acc"
+          },
+          "accuracy_validity": {
+            "const": "VERIFIED"
+          }
+        },
+        "required": [
+          "evaluation_type",
+          "accuracy_validity"
+        ]
+      },
+      "then": {
+        "required": [
+          "accuracy"
+        ]
+      }
+    }
+  ],
   "$defs": {
     "id": {
       "type": "string",

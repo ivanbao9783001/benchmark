@@ -71,7 +71,8 @@ class Journal:
         reference = 'results/events/'+str(event['seq'])+'.json'
         atomic_json(self.root/reference, event)
         keys = {'service_id', 'case_id', 'endpoint', 'model', 'evidence_ref', 'result_ref',
-                'execution_status', 'evidence_status', 'performance_validity', 'cleanup_status',
+                'execution_status', 'evidence_status', 'evaluation_type', 'performance_validity',
+                'accuracy_validity', 'cleanup_status',
                 'error_code', 'resource_results_ref', 'request_id', 'request_hash', 'kind',
                 'operation_id', 'after_seq', 'scope', 'bundle_sha256', 'ownership', 'task_id','phase','resource_refs'}
         data = {k: v for k, v in event['data'].items() if k in keys}

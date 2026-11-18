@@ -43,6 +43,14 @@ class OwnedExecutor:
             raise ProtocolError('INVALID_INPUT: owned executor requires deploy plan')
         return values
 
+    def case_mode(self,values,case_id):
+        """Read the frozen evaluation mode without trusting the failure path."""
+        try:
+            plan,_=owned_eval_inputs(values['plan.json'],values['bindings.json'],self.service())
+            return next((c.get('mode','perf') for c in plan['cases'] if c['case_id']==case_id),'perf')
+        except Exception:
+            return 'perf'
+
     def service(self):
         value=load_json(self.root/'service.json')
         validate_service(value)
@@ -99,9 +107,11 @@ class OwnedExecutor:
                     service_id=self.service_id,case_id=command['case_id'])
                 result['ownership']='owned'
                 atomic_json(target,result)
+                validity='performance_validity' if result['evaluation_type']=='perf' else 'accuracy_validity'
                 return 'evaluation.completed','EVALUATED',dict(service_id=self.service_id,case_id=command['case_id'],
                     result_ref=reference,result_sha256=digest(result),execution_status=result['execution_status'],
-                    evidence_status=result['evidence_status'],performance_validity=result['performance_validity'])
+                    evidence_status=result['evidence_status'],evaluation_type=result['evaluation_type'],
+                    **{validity:result[validity]})
             except Exception as error:
                 with DiagnosticStream((folder/'evaluation-error.log')) as stream:
                     traceback.print_exc(file=stream)
@@ -112,10 +122,13 @@ class OwnedExecutor:
                     cleanup=dict(cleanup_status='UNVERIFIED',reason='remote tester may still be active; service and claims retained')
                 else:
                     cleanup=self._release(values,self.service(),operation,folder)
+                mode=self.case_mode(values,command['case_id'])
+                validity='performance_validity' if mode=='perf' else 'accuracy_validity'
                 result=dict(execution_status='CANCELLED' if isinstance(error,Cancelled) else 'FAILED',
                             cleanup_status=cleanup['cleanup_status'],cleanup=cleanup,
                             error_ref='task.jsonl')
-                result=evaluation_result(dict(result,evidence_status='PARTIAL',performance_validity='UNVERIFIED'),
+                result=evaluation_result(dict(result,evidence_status='PARTIAL',evaluation_type=mode,
+                                              **{validity:'UNVERIFIED'}),
                     task_id=self.task_id,operation_id=operation,service_id=self.service_id,case_id=command['case_id'])
                 atomic_json(target,result)
                 return ('operation.cancelled' if isinstance(error,Cancelled) else 'operation.failed',

@@ -207,8 +207,19 @@
             "required": [
               "case_id",
               "result_ref",
-              "execution_status",
-              "performance_validity"
+              "execution_status"
+            ],
+            "anyOf": [
+              {
+                "required": [
+                  "performance_validity"
+                ]
+              },
+              {
+                "required": [
+                  "accuracy_validity"
+                ]
+              }
             ],
             "properties": {
               "case_id": {
@@ -228,6 +239,13 @@
                 ]
               },
               "performance_validity": {
+                "enum": [
+                  "VERIFIED",
+                  "UNVERIFIED",
+                  "INVALID"
+                ]
+              },
+              "accuracy_validity": {
                 "enum": [
                   "VERIFIED",
                   "UNVERIFIED",

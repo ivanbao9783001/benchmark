@@ -13,14 +13,14 @@ from test_runtime import command
 
 
 class ExternalRuntimeTests(unittest.TestCase):
-    def setup_runtime(self, root, runner, reset=False):
-        plan, _ = normalize_external_plan(external_plan())
+    def setup_runtime(self, root, runner, reset=False, plan=None, bindings=None):
+        plan, _ = normalize_external_plan(plan or external_plan())
         if reset:
             plan['cases'][0]['reset_cache']=True
             plan['service']['permissions']['reset_cache']=True
             plan['service']['reset_targets']=[dict(id='m',url='http://model:8000/reset_prefix_cache',
                                                   metrics_url='http://model:8000/metrics')]
-        bindings = eval_bindings()
+        bindings = bindings or eval_bindings()
         review = dict(schema_version='1.0', status='APPROVED', unresolved=[],
                       evidence_refs=['review/input.json'], inputs=review_inputs(plan, bindings, 'a'*64))
         frozen = root/'frozen'
@@ -91,3 +91,46 @@ class ExternalRuntimeTests(unittest.TestCase):
             result = json.loads((root/'task'/event['data']['evidence_ref']).read_text())
             self.assertEqual(result['external_service_action'], 'NONE')
             self.assertEqual(result['cleanup_status'], 'UNVERIFIED')
+
+    def accuracy_inputs(self):
+        plan = external_plan()
+        plan['cases'] = [dict(case_id='acc', mode='acc', dataset_id='gpqa', concurrency=8,
+                              max_out_len=512, timeout_seconds=60)]
+        bindings = eval_bindings()
+        bindings['testers']['tester']['datasets'] = {
+            'gpqa': dict(type='aisbench_task', task='gpqa_gen_0_shot_str', path='/data/gpqa')}
+        return plan, bindings
+
+    def test_accuracy_eval_event_carries_accuracy_validity(self):
+        plan, bindings = self.accuracy_inputs()
+        def runner(*args, **kwargs):
+            return dict(evaluation_type='acc', execution_status='SUCCEEDED', evidence_status='COMPLETE',
+                        accuracy_validity='VERIFIED',
+                        accuracy=dict(schema_version='1.0', status='VERIFIED', task='gpqa_gen_0_shot_str',
+                                      dataset='gpqa_diamond', metric='accuracy', unit='percent',
+                                      value=42.5, num_samples=198, scope='test'))
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            runtime, _ = self.setup_runtime(root, runner, plan=plan, bindings=bindings)
+            response = API(runtime).submit(command('eval', runtime.version, 'e', service_id='s', case_id='acc', wait_ms=1000))
+            event = response['events'][-1]
+            self.assertEqual(event['type'], 'evaluation.completed')
+            self.assertEqual(event['data']['accuracy_validity'], 'VERIFIED')
+            self.assertNotIn('performance_validity', event['data'])
+            result = json.loads((root/'task'/event['data']['result_ref']).read_text())
+            self.assertEqual(result['evaluation_type'], 'acc')
+
+    def test_accuracy_failure_path_never_claims_performance(self):
+        plan, bindings = self.accuracy_inputs()
+        def failing(*args, **kwargs):
+            raise RuntimeError('accuracy failure')
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            runtime, _ = self.setup_runtime(root, failing, plan=plan, bindings=bindings)
+            response = API(runtime).submit(command('eval', runtime.version, 'e', service_id='s', case_id='acc', wait_ms=1000))
+            event = response['events'][-1]
+            self.assertEqual(event['type'], 'operation.failed')
+            result = json.loads((root/'task'/event['data']['evidence_ref']).read_text())
+            self.assertEqual(result['evaluation_type'], 'acc')
+            self.assertEqual(result['accuracy_validity'], 'UNVERIFIED')
+            self.assertNotIn('performance_validity', result)
