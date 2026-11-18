@@ -167,7 +167,8 @@ class Runtime:
                 if old['request_hash'] != digest:
                     raise ProtocolError('REQUEST_CONFLICT')
                 return dict(old)
-            if self.state == 'RECOVERY_REQUIRED':
+            if self.state == 'RECOVERY_REQUIRED' and not (
+                    command['kind'] == 'cancel' and command['scope'] == 'task'):
                 raise ProtocolError('RECOVERY_REQUIRED')
             if self.version != command['expected_version']:
                 raise ProtocolError('STALE_VERSION')

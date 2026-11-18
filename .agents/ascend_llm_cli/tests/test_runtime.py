@@ -74,6 +74,23 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(runtime.state,'RECOVERY_REQUIRED')
             reference=runtime.journal.events[-1]['data']['evidence_ref']
             self.assertIn('stage adapter broke',(Path(root)/reference).read_text())
+    def test_recovery_required_admits_only_task_scope_cancel(self):
+        class Executor:
+            def __call__(self,*args):
+                raise RuntimeError('stage adapter broke')
+            def cancel_idle(self,operation):
+                return 'operation.cancelled','CANCELLED',dict(cleanup_status='VERIFIED')
+        with tempfile.TemporaryDirectory() as root:
+            runtime=Runtime(root,'t',Executor())
+            runtime.submit(command(plan_ref='frozen'));finish(runtime)
+            self.assertEqual(runtime.state,'RECOVERY_REQUIRED')
+            with self.assertRaisesRegex(ProtocolError,'RECOVERY_REQUIRED'):
+                runtime.submit(command('deploy',runtime.version,'d2',plan_ref='frozen'))
+            runtime.submit(command('cancel',runtime.version,'c1',scope='task'))
+            finish(runtime)
+            self.assertEqual(runtime.state,'CANCELLED')
+            self.assertEqual(runtime.journal.events[-1]['type'],'operation.cancelled')
+
     def test_unknown_event_does_not_end_operation_or_replace_service(self):
         with tempfile.TemporaryDirectory() as root:
             runtime=Runtime(root,'t',FakeExecutor(.1))

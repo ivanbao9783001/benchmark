@@ -175,10 +175,29 @@ class OwnedExecutor:
         return result
 
     def cancel_idle(self,operation):
-        if not (self.root/'service.json').exists():
-            return 'operation.cancelled','CANCELLED',dict(cleanup_status='VERIFIED')
-        kind,status,data=self(dict(task_id=self.task_id,kind='release',service_id=self.service_id),
-                              operation,threading.Event())
-        verified=kind=='release.completed'
-        data['cleanup_status']='VERIFIED' if verified else 'UNVERIFIED'
-        return 'operation.cancelled','CANCELLED' if verified else 'RECOVERY_REQUIRED',data
+        if (self.root/'service.json').exists():
+            kind,status,data=self(dict(task_id=self.task_id,kind='release',service_id=self.service_id),
+                                  operation,threading.Event())
+            verified=kind=='release.completed'
+            data['cleanup_status']='VERIFIED' if verified else 'UNVERIFIED'
+            return 'operation.cancelled','CANCELLED' if verified else 'RECOVERY_REQUIRED',data
+        # No service was recorded. Release claims only when durable command history
+        # proves nothing was created; otherwise keep the recovery state.
+        values=self.inputs()
+        groups=values['compiled.json']['topology']['groups']
+        results={}
+        for name,node in self.nodes.items():
+            keys=[k for k,g in groups.items() if g['node']==name]
+            resources=sorted({r for k in keys for r in
+                ['npu:'+str(n) for n in groups[k]['npu_ids']]+['tcp:'+str(p) for p in groups[k]['ports']]})
+            try:
+                results[name]=node.guard.release_unstarted(resources)
+            except Exception as error:
+                results[name]=dict(cleanup_status='UNVERIFIED',claims_released=False,
+                    error_code=str(error).split(':',1)[0] if isinstance(error,ProtocolError) else 'IO_ERROR')
+        verified=all(result['cleanup_status']=='VERIFIED' for result in results.values())
+        return ('operation.cancelled' if verified else 'operation.failed',
+                'CANCELLED' if verified else 'RECOVERY_REQUIRED',
+                dict(cleanup_status='VERIFIED' if verified else 'UNVERIFIED',
+                     claims_released=all(result.get('claims_released',False) for result in results.values()),
+                     resources=results))

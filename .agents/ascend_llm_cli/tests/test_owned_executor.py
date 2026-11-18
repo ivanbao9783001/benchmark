@@ -58,6 +58,31 @@ class OwnedExecutorTests(unittest.TestCase):
                     node.runner.assert_not_called()
             atomic_json(executor.root/'service.json',original)
 
+    def test_recovery_cancel_releases_claims_only_without_create_history(self):
+        with tempfile.TemporaryDirectory() as folder:
+            api,executor,reference,node=self.setup_runtime(folder)
+            groups=executor.inputs()['compiled.json']['topology']['groups']
+            resources=sorted({r for group in groups.values() for r in
+                ['npu:'+str(n) for n in group['npu_ids']]+['tcp:'+str(p) for p in group['ports']]})
+            node.guard.claim(resources)
+            kind,status,data=executor.cancel_idle('op')
+            self.assertEqual((kind,status),('operation.cancelled','CANCELLED'))
+            self.assertTrue(data['claims_released'])
+            self.assertEqual(list((node.guard.root/'claims').glob('*.json')),[])
+
+    def test_recovery_cancel_keeps_claims_after_create_history(self):
+        with tempfile.TemporaryDirectory() as folder:
+            api,executor,reference,node=self.setup_runtime(folder)
+            groups=executor.inputs()['compiled.json']['topology']['groups']
+            resources=sorted({r for group in groups.values() for r in
+                ['npu:'+str(n) for n in group['npu_ids']]+['tcp:'+str(p) for p in group['ports']]})
+            node.guard.claim(resources)
+            node.guard.command('create-1',{'kind':'create'},lambda:dict(container_id='unused'))
+            kind,status,data=executor.cancel_idle('op')
+            self.assertEqual((kind,status),('operation.failed','RECOVERY_REQUIRED'))
+            self.assertFalse(data['claims_released'])
+            self.assertEqual(len(list((node.guard.root/'claims').glob('*.json'))),len(resources))
+
     def setup_runtime(self,folder,evaluator=None,idle_release=False):
         plan,bound=deploy_plan(),bindings()
         if idle_release:

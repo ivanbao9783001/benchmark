@@ -87,7 +87,7 @@ wait-event 的 after-seq 只使用实际交付的 next_cursor。
 | 输出 | 普通响应 <=8192 字节；日志按引用读取，原日志保留 |
 
 保留完整任务目录、请求文件、响应及现场版本；不要只保存最终 PASS。
-恢复不明资源时按初版契约进入 RECOVERY_REQUIRED，保留证据并人工现场核验，不盲目重跑。自动跨节点修复不属于初版要求。
+恢复不明资源时按初版契约进入 RECOVERY_REQUIRED，保留证据并人工现场核验，不盲目重跑。自动跨节点修复不属于初版要求。owner 可用 task 范围 cancel 发起核验收尾：无 create/unknown 命令历史才释放 claims，有则保持 RECOVERY_REQUIRED。
 
 ## 五技能安装
 
