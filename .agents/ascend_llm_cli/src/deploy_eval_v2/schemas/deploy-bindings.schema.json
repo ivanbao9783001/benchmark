@@ -155,6 +155,29 @@
                           "const": "aisbench_synthetic"
                         }
                       }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "type",
+                        "task",
+                        "path"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "type": {
+                          "const": "aisbench_task"
+                        },
+                        "task": {
+                          "enum": [
+                            "gpqa_gen_0_shot_str"
+                          ]
+                        },
+                        "path": {
+                          "type": "string",
+                          "pattern": "^/"
+                        }
+                      }
                     }
                   ]
                 }
@@ -317,6 +340,28 @@
           "properties": {
             "type": {
               "const": "aisbench_synthetic"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "task",
+            "path"
+          ],
+          "properties": {
+            "type": {
+              "const": "aisbench_task"
+            },
+            "task": {
+              "enum": [
+                "gpqa_gen_0_shot_str"
+              ]
+            },
+            "path": {
+              "$ref": "#/$defs/path"
             }
           }
         },

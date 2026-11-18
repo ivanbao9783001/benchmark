@@ -451,6 +451,16 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
     },
     "case": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/perf_case"
+        },
+        {
+          "$ref": "#/$defs/acc_case"
+        }
+      ]
+    },
+    "perf_case": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -467,6 +477,9 @@
       "properties": {
         "case_id": {
           "$ref": "#/$defs/id"
+        },
+        "mode": {
+          "const": "perf"
         },
         "concurrency": {
           "type": "integer",
@@ -509,6 +522,44 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1
+        }
+      }
+    },
+    "acc_case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "mode",
+        "dataset_id",
+        "concurrency",
+        "max_out_len",
+        "timeout_seconds"
+      ],
+      "properties": {
+        "case_id": {
+          "$ref": "#/$defs/id"
+        },
+        "mode": {
+          "const": "acc"
+        },
+        "dataset_id": {
+          "$ref": "#/$defs/id"
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "max_out_len": {
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 32768
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
         }
       }
     }

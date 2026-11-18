@@ -158,6 +158,28 @@
               "$ref": "#/$defs/path"
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "task",
+            "path"
+          ],
+          "properties": {
+            "type": {
+              "const": "aisbench_task"
+            },
+            "task": {
+              "enum": [
+                "gpqa_gen_0_shot_str"
+              ]
+            },
+            "path": {
+              "$ref": "#/$defs/path"
+            }
+          }
         }
       ]
     }
