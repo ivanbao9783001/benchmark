@@ -5,10 +5,10 @@
 ## 功能边界
 
 - 只部署：部署环境预检、容器及模型启动、服务健康检查、冒烟测试；成功返回 service.json 并保留服务。
-- 只评测：接受 endpoint + model，或已有 service.json；核验测试工具、依赖及服务健康，运行 AISBench 性能测试并输出结构化结果。不需要部署配置，也不取得停止外部服务的权限。
+- 只评测：接受 endpoint + model，或已有 service.json；核验测试工具、依赖及服务健康，运行 AISBench 性能或精度测试并输出结构化结果。不需要部署配置，也不取得停止外部服务的权限。
 - 部署后评测：把 service.json 交给一个独立评测任务，可使用新的 case 和测试环境，不必重新部署。
 - release/cancel：按归属释放本任务资源。停止 runtime 不等于释放服务。
-- 精度测试尚未实现，不把健康或冒烟测试视为精度评测。
+- 精度评测与性能评测是同级 `mode`：`perf` 跑性能负载，`acc` 只支持 AISBench 原生 `gpqa_gen_0_shot_str`（GPQA-Diamond 全量 198 题）并报告 `accuracy`；不把健康或冒烟测试视为精度评测。
 
 ## 安装
 
@@ -26,7 +26,7 @@ deploy-eval-v2 --version
 | 阶段 | 输入 | 成功输出 |
 | --- | --- | --- |
 | 部署 | 部署计划、物理绑定和审阅结果 | service.json，包含端点、归属、健康/冒烟证据引用 |
-| 评测 | 服务信息、cases、tester 绑定和审阅结果 | 测试结果 JSON，包含实际负载、性能证据与有效性 |
+| 评测 | 服务信息、cases、tester 绑定和审阅结果 | 测试结果 JSON，包含实际负载、按 `mode` 选择的性能或精度证据与有效性 |
 | 释放 | service_id、task_ref、请求身份及当前版本 | 资源释放结果 JSON |
 
 先使用 prepare-inputs 把业务 JSON 转成待审阅的 plan.json / bindings.json。此步骤仅本地校验，不授权、不连接现场、不执行部署。
@@ -46,6 +46,14 @@ deploy-eval-v2 --version
 ```
 
 也可用 `service` 对象代替 endpoint/model；该对象可直接使用部署输出。评测任务不继承服务生产者的释放权限。独立评测当前不允许清缓存，需使用已审阅的完整计划路径显式授权该操作。
+
+精度 case 与性能 case 同级，使用 `mode=acc` 和 `aisbench_task` 数据绑定，不允许混入性能字段：
+
+```json
+{"stage":"eval","destination":"prepared-acc","task_id":"acc-01","endpoint":"http://node.example:8000","model":"served-model","tester":{"host":"node.example","work_root":"/work/tasks","python":"/venv/bin/python","aisbench":"/venv/bin/ais_bench","model_path":"/models/tokenizer","datasets":{"gpqa":{"type":"aisbench_task","task":"gpqa_gen_0_shot_str","path":"/data/datasets/gpqa"}}},"cases":[{"case_id":"gpqa_diamond_acc","mode":"acc","dataset_id":"gpqa","concurrency":8,"max_out_len":512,"timeout_seconds":3600}]}
+```
+
+`path` 必须是包含 `gpqa_diamond.csv` 的绝对目录；样本数固定为 198，命令固定 `--mode all`，不写 `test_range`、不传子集、不重置缓存、不采集性能指标。结果报告 AISBench 评测器返回的 `accuracy`（百分制）与 `accuracy_validity`。
 
 ```bash
 deploy-eval-v2 prepare-inputs --request task.json

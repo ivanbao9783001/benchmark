@@ -9,11 +9,13 @@ description: Deploy and Eval v2 的服务测试规划、结果证据分析与阶
 
 独立入口接受 endpoint+model 或部署产出的 service.json，加 cases 与 tester JSON；通过 plan 的 prepare-inputs 准备新评测任务，并重新健康检查，不继承部署任务释放权限。执行输入为 service handle 和一个冻结 case；不依赖 deploy 私有 dispatch.json。外部端点通过 external_eval 计划登记，不要求先 deploy，也不自动获得清缓存、重启、停止或释放权限。不用 fake-service 冒充外部服务。
 
-目标执行顺序：重新检查服务健康 → AISBench/数据核验 → 显式获授权的缓存操作 → 预热 → 正式测试 → 自有客户端清理 → 原生结果及指标证据核验。每次使用阶段剩余时间，不能把多次调用各自的完整超时累加突破 deadline。
+目标执行顺序：重新检查服务健康 → AISBench/数据核验 → 按 case.mode 分支：性能执行显式获授权的缓存操作、预热、正式测试与指标采集；精度执行原生全量推理与评测 → 自有客户端清理 → 原生结果及指标证据核验。每次使用阶段剩余时间，不能把多次调用各自的完整超时累加突破 deadline。
 
 保留用户显式负载；默认普通请求数为并发×4、稳态为×10。不得为演示减少请求数、改变端口或丢弃未知参数。记录合成长度及前缀偏差，不自动判失败，不把目标前缀比例写成缓存命中率。
 
-分析时分别给出 execution_status、evidence_status、performance_validity。检查 AISBench 退出码、预期模型×数据集结果组、请求数量/成功状态、worker 日志和稳态窗口。请求完成但没有有效稳态窗口可为 SUCCEEDED + UNVERIFIED；未知指标不填零。
+精度 case（`mode=acc`）与性能 case 同级：绑定 `type=aisbench_task` 的 `gpqa_gen_0_shot_str`，目录须含 `gpqa_diamond.csv` 且为全量 198 题；不设 `test_range`、不支持子集、不做缓存重置或指标采集。命令为 `<aisbench> <config> --mode all --work-dir <case>/outputs`，只转发 AISBench 评测器返回的百分制 `accuracy`，并核验 predictions 198 行、results JSON、infer/eval 日志与 summary；日志或 summary 缺失时 `accuracy_validity=UNVERIFIED`，但保留原值。
+
+分析时分别给出 execution_status、evidence_status，以及按 `evaluation_type` 选择的 performance_validity 或 accuracy_validity。性能分支检查 AISBench 退出码、预期模型×数据集结果组、请求数量/成功状态、worker 日志和稳态窗口；精度分支检查预测行数、原生 results 与日志存在性。请求完成但没有有效稳态窗口可为 SUCCEEDED + UNVERIFIED；未知指标不填零。
 
 evaluation.completed 仅表示阶段结束。按结果决定下一 case 或收尾，不在子技能内递归调用 deploy。测试失败先核验自有客户端清理，服务处理遵循冻结策略；外部服务始终不随测试失败释放。交付结果引用、实际负载、证据状态和限制，不粘贴完整日志。
 
@@ -21,7 +23,7 @@ evaluation.completed 仅表示阶段结束。按结果决定下一 case 或收�
 
 依赖 CLI >=0.1.0a7、协议 1.0。[测试环境预检](references/benchmark-preflight.md)用于解释环境门控；远端测试器见 [远端测试](references/remote-tester.md)，结果核验见 [结果契约](references/result-validation.md)和[原生证据](references/native-result-evidence.md)，仅清缓存任务读取 [缓存重置](references/cache-reset.md)。共享请求字段见已安装 ascend-llm-router 的 references/cli-contract.md。
 
-从 get-status 获取当前版本，使用冻结 service_id/case_id 提交 eval；RUNNING 时按 next_cursor 等待。保持 tester.environment 一致，进程使用直接 Python 启动。交付结果引用、实际负载、三项状态与清理证据；外部服务不交给 release 停止。缺少性能证据时保留 UNVERIFIED。
+从 get-status 获取当前版本，使用冻结 service_id/case_id 提交 eval；RUNNING 时按 next_cursor 等待。保持 tester.environment 一致，进程使用直接 Python 启动。交付结果引用、实际负载、三项状态与清理证据；外部服务不交给 release 停止。缺少对应模式的证据时保留 UNVERIFIED。
 
 独立 external_eval 的框架收尾：先核验 evaluation.completed、原生结果和被测服务仍健康，再确认 get-status 无活动 operation。当前CLI不允许直接停止EVALUATED runtime；如无需继续case，使用原评测task_ref和当前expected_version提交 `cancel`（scope=task，新的request_id），只终结本评测会话。external_eval契约不具备部署或服务释放权，此cancel不会停止被测服务。等 operation.cancelled 且 cleanup_status=VERIFIED 后，用原启动nonce调用stop-runtime；再核验外部服务仍健康，补收最终task.jsonl。此流程不是release服务，不需要也不得取得服务部署归属身份。若清理未知或仍有活动操作，报告并按原身份查询，不以手工kill或换任务掩盖未知状态。保留evaluation.completed成功结果；随后task会话终结的CANCELLED不等于性能请求被取消。
 

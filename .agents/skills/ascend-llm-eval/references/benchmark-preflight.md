@@ -13,6 +13,11 @@ SyntheticDataset capability. Config is generated before this check without loadi
 remote data in the coordinator environment. The native dataset implementation owns
 sample generation; support checks do not silently reduce load.
 
+For `mode=acc`, the data check binds the task whitelist (`gpqa_gen_0_shot_str`),
+imports `GPQADataset`, `GPQAEvaluator` and `first_option_postprocess`, and counts
+`gpqa_diamond.csv` with `csv.reader`; only exactly 198 data rows pass. Quoted
+newlines make physical line counts meaningless, and there is no subset mode.
+
 Only a successful child exit plus VERIFIED preflight.json permits AISBench to
 start. Failures preserve preflight.log and use the normal stage failure/cleanup
 path. Local tests cover injected distribution/capability evidence and a real Python

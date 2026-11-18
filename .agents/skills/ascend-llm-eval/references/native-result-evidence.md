@@ -21,3 +21,7 @@ Passing native requests does not establish a valid steady-state window or server
 metric agreement. The result keeps performance_validity=UNVERIFIED until those
 separate evidence checks are implemented and satisfied. Local tests use generated
 native-format evidence, not a real AISBench run.
+
+This module covers the `perf` branch only. `mode=acc` uses accuracy_evidence.py,
+which validates native GPQA predictions/results/logs and forwards the evaluator's
+percent accuracy without recomputation.

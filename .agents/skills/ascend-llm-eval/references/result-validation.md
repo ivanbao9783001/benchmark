@@ -2,8 +2,23 @@
 
 Evaluation results pass result.schema.json before publication. The coordinator
 binds task/operation/service/case identity, rejecting conflicting adapter identities.
-Execution, evidence and performance enums are independent; VERIFIED performance
-requires COMPLETE evidence. Native request success alone cannot assert this.
+Execution, evidence and validity enums are independent; VERIFIED performance or
+accuracy requires COMPLETE evidence. Native request success alone cannot assert
+performance validity.
+
+`evaluation_type` selects the sibling contract: `perf` results carry
+`performance_validity`/`performance`, `acc` results carry
+`accuracy_validity`/`accuracy`/`accuracy_evidence`. The event mirrors the same
+validity key. A result missing the branch required by its mode fails the schema.
+
+Accuracy evidence reads `<case>/outputs/<timestamp>`: predictions must contain
+exactly 198 success rows with gold and prediction, and results must contain a
+finite 0-100 `accuracy`. The value is forwarded from the native evaluator, never
+recomputed. Missing infer/eval logs or summary leave `accuracy_validity=UNVERIFIED`
+with `ACC_INFER_LOG_MISSING`, `ACC_EVAL_LOG_MISSING` or `ACC_SUMMARY_MISSING`
+recorded in accuracy-evidence.json; the metric itself is still reported. Symlinks,
+escaping paths, malformed rows, count mismatches and ambiguous run directories are
+hard failures.
 
 Use the event's result_sha256 when reading a stage result:
 

@@ -8,9 +8,9 @@
 
 部署 JSON → 现场绑定/审阅 → 冻结部署输入 → 预检/部署/健康/冒烟 → service.json。
 
-endpoint + model 或 service.json，加 case JSON 和 tester 绑定 → 独立评测输入 → 审阅冻结 → 工具依赖与健康预检 → 性能负载 → result JSON。
+endpoint + model 或 service.json，加 case JSON 和 tester 绑定 → 独立评测输入 → 审阅冻结 → 工具依赖与健康预检 → 按 case.mode 进入性能负载或原生精度任务 → result JSON。
 
-部署任务可以永不评测；评测任务可以从未部署过的外部服务开始。同一个部署服务可用于多个独立评测任务。评测故障只清理评测客户端，不授予测试任务服务释放权。健康检查或冒烟失败不得产生 deployment.ready。精度测试是后续能力，当前不接入。
+部署任务可以永不评测；评测任务可以从未部署过的外部服务开始。同一个部署服务可用于多个独立评测任务。评测故障只清理评测客户端，不授予测试任务服务释放权。健康检查或冒烟失败不得产生 deployment.ready。`perf` 与 `acc` 是同级评测分支：`acc` 只支持 AISBench 原生 `gpqa_gen_0_shot_str`（GPQA-Diamond 全量 198 题），产出 `accuracy_validity` 与百分制 `accuracy`，不采集性能指标、不重置缓存。
 
 ## 公开 JSON 与唯一 Schema
 
@@ -20,7 +20,7 @@ prepare-inputs：deploy 输入为 stage/destination/deployment/bindings；deploy
 
 service.json：包含 schema_version/task_id/service_id/ownership/endpoint/model、runtime/bundle 摘要、容器归属、保留策略、health_time 与 health_evidence_ref。引用的部署结果同时保存健康与冒烟证据。单份 service.json 是交接源，禁止再在每个操作目录复制服务副本。eval 使用其中的 endpoint/model/service_id；释放权不随对象复制传播。
 
-result JSON：包含 task/operation/service/case 身份、execution_status、evidence_status、performance_validity、actual_load、performance 及原生证据引用。性能条目以明确字段表示单位，如 duration_seconds 和 request_throughput（req/s）；未知、缺失或无效证据不可填成零。只有证据 COMPLETE 才能标记性能 VERIFIED。
+result JSON：包含 task/operation/service/case 身份、`evaluation_type`、execution_status、evidence_status、`actual_load` 及对应模式的证据引用。`evaluation_type=perf` 时使用 performance_validity、performance 与性能证据；`evaluation_type=acc` 时使用 accuracy_validity、accuracy 与 accuracy_evidence。性能条目以明确字段表示单位，如 duration_seconds 和 request_throughput（req/s）；精度沿用 AISBench 评测器的百分制 accuracy。未知、缺失或无效证据不可填成零。只有证据 COMPLETE 才能把对应有效性标记为 VERIFIED。
 
 release JSON：保存每节点资源结果与 cleanup_status。release.unverified 保留 claims，不能以请求接纳或进程退出替代释放核验。
 
