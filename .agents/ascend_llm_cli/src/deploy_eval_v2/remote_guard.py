@@ -6,12 +6,34 @@ process crashes; absence of a live process is never sufficient to remove them.
 from contextlib import contextmanager
 import hashlib
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 from .compiler import digest
 from .durable import atomic_json
 from .json_io import load_json
 from .protocol import ProtocolError
+
+# Host-global by design; deployments may bind another writable root because
+# ordinary users cannot create /var/lib entries without administrator help.
+DEFAULT_GUARD_ROOT = '/var/lib/deploy-eval-v2/guard'
+
+
+def validate_guard_root(value):
+    if (not isinstance(value, str) or not value.startswith('/') or value == '/' or
+            len(value) > 4096 or '..' in PurePosixPath(value).parts or '\\' in value or
+            any(ord(character) < 32 for character in value)):
+        raise ProtocolError('INVALID_INPUT: guard root')
+    return value.rstrip('/')
+
+
+def resolve_guard_root(binding, task_root=None):
+    """Binding-local guard root; never inside the task directory it guards."""
+    value = validate_guard_root(binding.get('guard_root', DEFAULT_GUARD_ROOT))
+    if task_root is not None:
+        guard, task = PurePosixPath(value), PurePosixPath(task_root)
+        if guard == task or guard.is_relative_to(task):
+            raise ProtocolError('INVALID_INPUT: guard root must be outside the task directory')
+    return value
 
 
 @contextmanager

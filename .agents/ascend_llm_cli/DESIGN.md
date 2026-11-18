@@ -30,7 +30,7 @@ release JSON：保存每节点资源结果与 cleanup_status。release.unverifie
 2. draft-review 请求引用 plan、bindings 和 runtime_sha256，生成审阅摘要；根据实际授权形成 review（APPROVED、空 unresolved、非空 evidence_refs，绑定输入摘要）。
 3. freeze-inputs 请求含 plan/bindings/review 文件路径、destination、runtime_sha256。冻结后不可手改。
 4. control.json 的 tasks[TASK] 包含 host、root、allowed_root、绝对 python；root 必须是 allowed_root 的子目录。附加节点/tester 必须与冻结输入一致。
-5. check-ready / publish-task 请求含 task_ref/runtime_archive/input_directory/runtime_sha256/bundle_sha256。前者仅做本地检查，后者发布不可变包。
+5. check-ready / publish-task 请求含 task_ref/runtime_archive/input_directory/runtime_sha256/bundle_sha256。前者仅做本地检查，后者发布不可变包。节点绑定的可选 `guard_root`（绝对路径，默认 /var/lib/deploy-eval-v2/guard）是宿主机全局的占用声明与命令日志根：必须由执行用户可写且不在任务目录内。check-ready 离线校验形状（GUARD_ROOT_INVALID），publish-task 在上传前用 SSH 验证可创建可写（GUARD_ROOT_UNAVAILABLE，未上传任何 payload，可重试）。
 6. start-task 请求含 task_ref/runtime_sha256/bundle_sha256/nonce。nonce 一次生成并保存，重试不得更换。
 
 部署-only 不绑定 tester；外部 eval 的 runtime 在测试机运行，校验 machine_id 与工具解释器。工具存在不代表依赖可导入。tester.environment 是冻结的显式环境映射，preflight、负载、postflight 使用一致环境，不自动修复环境。

@@ -27,6 +27,23 @@ class NodeWorkerTests(unittest.TestCase):
             with self.assertRaisesRegex(ProtocolError,'RESOURCE_BUSY'):
                 HostGuard(guardroot,'other','d'*64).claim(['npu:0'])
 
+    def test_guard_root_is_read_from_frozen_node_binding(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/'task'
+            group=dict(node='n',root=str(root),host='host',npu_ids=[0],ports=[])
+            values={'plan.json':dict(task_id='t',intent='deploy'),
+                    'bindings.json':{'nodes':{'n':dict(guard_root='/opt/deploy-eval-guard')}},
+                    'compiled.json':dict(topology=dict(groups={'g':group}))}
+            request=dict(protocol_version='1.0',task_id='t',node='n',action='claim',command_id='claim1',
+                         runtime_sha256='a'*64,bundle_sha256='b'*64,token='c'*64,timeout_seconds=10,group='g')
+            guardroot=Path(folder)/'guard'
+            with patch('deploy_eval_v2.node_worker.verify_runtime'),\
+                 patch('deploy_eval_v2.node_worker.verify_frozen',return_value=values),\
+                 patch('deploy_eval_v2.node_worker.resolve_guard_root',return_value=str(guardroot)) as resolve:
+                self.assertTrue(dispatch(root,request,node_factory=Mock())['result']['claimed'])
+            self.assertEqual(resolve.call_args.args[0]['guard_root'],'/opt/deploy-eval-guard')
+            self.assertEqual(resolve.call_args.args[1],str(root))
+
     def test_arbitrary_shell_payload_is_rejected_before_package_reads(self):
         with patch('deploy_eval_v2.node_worker.verify_runtime') as verify:
             with self.assertRaisesRegex(ProtocolError,'fields'):

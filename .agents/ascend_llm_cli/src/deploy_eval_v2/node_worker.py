@@ -16,13 +16,11 @@ from .durable import atomic_json
 from .json_io import unique_object,reject_constant,load_json
 from .protocol import ProtocolError,encode,envelope
 from .publication import verify_runtime
-from .remote_guard import HostGuard,exclusive
+from .remote_guard import HostGuard,exclusive,resolve_guard_root
 from .release import release_host_resources,release_known
 
-GUARD_ROOT='/var/lib/deploy-eval-v2/guard'
 
-
-def dispatch(root,request,*,guard_root=GUARD_ROOT,node_factory=DockerNode):
+def dispatch(root,request,*,guard_root=None,node_factory=DockerNode):
     common={'protocol_version','task_id','node','action','command_id','runtime_sha256','bundle_sha256','token','timeout_seconds'}
     fields={'claim':{'group'},'install':{'group'},'create':{'group'},'start':{'container_id'},
             'dependency':{'group','instance','container_id'},'service':{'group','instance','container_id'},
@@ -70,6 +68,11 @@ def dispatch(root,request,*,guard_root=GUARD_ROOT,node_factory=DockerNode):
         selected=groups.get(request['group'])
         if selected is None:
             raise ProtocolError('INVALID_INPUT: group not on node')
+    if guard_root is None:
+        binding=values['bindings.json']['nodes'].get(request['node'])
+        if not isinstance(binding,dict):
+            raise ProtocolError('INVALID_INPUT: node binding missing')
+        guard_root=resolve_guard_root(binding,str(root))
     guard=HostGuard(guard_root,request['task_id'],request['token'])
     node=node_factory(guard)
     deadline=time.monotonic()+timeout

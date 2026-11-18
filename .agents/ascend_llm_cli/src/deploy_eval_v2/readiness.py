@@ -7,6 +7,7 @@ from .compiler import verify_frozen
 from .publication import install_archive
 from .publication_cli import task_binding,publication_targets
 from .protocol import ProtocolError,envelope
+from .remote_guard import resolve_guard_root
 
 
 def check_ready(request,config):
@@ -47,6 +48,15 @@ def check_ready(request,config):
         identities=[machine(bound['nodes'][slot]) for slot in slots]
         require(all(identities),'NODE_MACHINE_ID_REQUIRED')
         require(len(set(identities))==len(identities),'NODE_MACHINE_IDS_MUST_BE_DISTINCT')
+        for slot in slots:
+            guard_root=bound['nodes'][slot].get('guard_root')
+            if guard_root is None:
+                continue
+            try:
+                resolve_guard_root(bound['nodes'][slot],
+                                   next(g['root'] for g in groups.values() if g['node']==slot))
+            except ProtocolError:
+                require(False,'GUARD_ROOT_INVALID')
         evaluation=plan.get('evaluation')
         if evaluation:
             tester=bound['testers'][evaluation['test_binding']]

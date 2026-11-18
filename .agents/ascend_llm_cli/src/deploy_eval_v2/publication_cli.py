@@ -6,7 +6,8 @@ from .compiler import verify_frozen
 from .input_publication import build_input_archive
 from .protocol import ProtocolError,envelope
 from .publication import build_archive,install_archive
-from .ssh_publication import publish_task
+from .remote_guard import resolve_guard_root
+from .ssh_publication import probe_guard_root,publish_task
 from .ssh_transport import exchange,ssh_argv
 
 
@@ -64,7 +65,17 @@ def publication_targets(values,binding):
     return targets
 
 
-def publish(request,config,*,publisher=publish_task):
+def guard_targets(values):
+    """Guard root per publication (host, root); requires a frozen deployment."""
+    if values['plan.json']['intent']!='deploy':
+        return {}
+    groups=values['compiled.json']['topology']['groups']
+    nodes=values['bindings.json']['nodes']
+    return {(group['host'],group['root']):resolve_guard_root(nodes[group['node']],group['root'])
+            for group in groups.values()}
+
+
+def publish(request,config,*,publisher=publish_task,prober=probe_guard_root):
     required={'task_ref','runtime_archive','input_directory','runtime_sha256','bundle_sha256'}
     if not isinstance(request,dict) or set(request)!=required or any(not isinstance(v,str) or not 1<=len(v)<=512 for v in request.values()):
         raise ProtocolError('INVALID_INPUT: publication request')
@@ -79,6 +90,7 @@ def publish(request,config,*,publisher=publish_task):
     if values['plan.json'].get('intent') not in ('deploy','external_eval'):
         raise ProtocolError('INVALID_INPUT: unsupported production plan')
     targets=publication_targets(values,binding)
+    guards=guard_targets(values)
     # Inspect both local payloads before any remote side effect or connection.
     with tempfile.TemporaryDirectory(prefix='deploy-eval-publish-') as temporary:
         temporary=Path(temporary)
@@ -87,6 +99,17 @@ def publish(request,config,*,publisher=publish_task):
         build_input_archive(request['input_directory'],inputs,request['bundle_sha256'],request['runtime_sha256'])
         completed=0
         for name,target in targets:
+            guard=guards.get((target['host'],target['root']))
+            if guard is not None:
+                try:
+                    prober(target['host'],target.get('python','/usr/bin/python3'),guard,task)
+                except (ProtocolError,OSError) as error:
+                    response=envelope(task,0,'ERROR')
+                    response.update(publication=dict(completed_targets=completed,total_targets=len(targets),
+                                                     failed_target=name),started=False)
+                    # Nothing was uploaded, so the caller may fix bindings and retry.
+                    response['error']=dict(code='GUARD_ROOT_UNAVAILABLE',message=str(error)[:512],retryable=True)
+                    return response
             try:
                 publisher(target['host'],target.get('python','/usr/bin/python3'),target['root'],
                           request['runtime_archive'],inputs,task,request['runtime_sha256'],request['bundle_sha256'])

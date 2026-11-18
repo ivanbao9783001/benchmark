@@ -182,6 +182,12 @@
           "machine_id": {
             "type": "string",
             "pattern": "^[a-f0-9]{32}$"
+          },
+          "guard_root": {
+            "type": "string",
+            "pattern": "^/",
+            "maxLength": 4096,
+            "description": "Host-global claim/journal root; must be writable by the deploying user and outside the task directory."
           }
         },
         "additionalProperties": false

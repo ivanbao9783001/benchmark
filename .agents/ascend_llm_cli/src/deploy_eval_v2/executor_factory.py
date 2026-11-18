@@ -9,8 +9,7 @@ from .external_executor import ExternalExecutor
 from .owned_executor import OwnedExecutor
 from .docker_node import DockerNode
 from .ssh_node import SSHNode
-from .remote_guard import HostGuard
-from .node_worker import GUARD_ROOT
+from .remote_guard import HostGuard,resolve_guard_root
 from .protocol import ProtocolError
 
 
@@ -24,7 +23,7 @@ def local_machine_id():
     return value
 
 
-def build_executor(root,identity,*,machine_id_reader=local_machine_id,guard_root=GUARD_ROOT):
+def build_executor(root,identity,*,machine_id_reader=local_machine_id,guard_root=None):
     validate_identity(identity)
     root=Path(root)
     if str(root)!=identity['task_root']:
@@ -57,7 +56,8 @@ def build_executor(root,identity,*,machine_id_reader=local_machine_id,guard_root
             local.append(slot)
             if any(Path(g['root'])!=root for g in compiled['topology']['groups'].values() if g['node']==slot):
                 raise ProtocolError('INVALID_INPUT: local node root binding differs')
-            nodes[slot]=DockerNode(HostGuard(guard_root,plan['task_id'],identity['nonce']))
+            nodes[slot]=DockerNode(HostGuard(guard_root or resolve_guard_root(binding,str(root)),
+                                             plan['task_id'],identity['nonce']))
         else:
             nodes[slot]=SSHNode(plan['task_id'],slot,compiled,identity['bundle_sha256'],
                                identity['runtime_sha256'],identity['nonce'],coordinator_root=root)

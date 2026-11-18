@@ -72,6 +72,17 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 
 容器 tester（CLI >=0.1.0a8）：绑定 container.id（完整容器 ID）与 container.image（sha256 镜像摘要）；python/aisbench/model_path/environment 属于容器，host_python 属于宿主框架。复用已有运行容器，只创建任务独立工具目录，不安装依赖或授予容器管理权限。工具预检和负载在容器执行，证据回收到宿主任务目录。
 
+## 宿主绑定与现场预检
+
+节点绑定 `nodes.<slot>` 支持可选 `guard_root`（绝对路径），默认 `/var/lib/deploy-eval-v2/guard`。
+该目录是宿主机全局的资源占用声明与命令日志根，必须由执行用户可写，且不得位于任务目录内；
+无 sudo 的现场应显式绑定到用户可写位置。
+
+`publish-task` 在上传前用 SSH 验证每个部署节点的 guard_root 可创建可写，失败返回
+`GUARD_ROOT_UNAVAILABLE` 且不上传任何 payload，修正绑定后可重试；`check-ready` 离线校验
+同一规则（`GUARD_ROOT_INVALID`）。启动阶段的失败一律保持 `UNVERIFIED`，必须先核对进程、
+容器和端口状态。
+
 ## 显式容器逻辑卡映射（本地补丁 local.devicemap1）
 
 `placement.devices` 始终表示宿主物理卡，资源声明、占用检查和收尾不变。
