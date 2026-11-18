@@ -57,6 +57,10 @@ def normalize_external_plan(plan):
     normalized = copy.deepcopy(plan)
     derived = []
     for case in normalized['cases']:
+        # Accuracy cases have no cache, load or warmup semantics; only perf
+        # cases are normalized against the performance permissions.
+        if case.get('mode', 'perf') != 'perf':
+            continue
         if case['reset_cache'] and not service['permissions']['reset_cache']:
             raise ProtocolError('INVALID_INPUT: cache reset not authorized')
         if case['reset_cache'] and not targets:
@@ -93,6 +97,10 @@ def validate_eval_bindings(plan, bindings):
             if dataset['type'] == 'aisbench_synthetic':
                 continue
             path(dataset['path'])
+            # Native AISBench tasks bind a dataset directory selected by the
+            # task whitelist; file-level rows are validated by preflight.
+            if dataset['type'] == 'aisbench_task':
+                continue
             if PurePosixPath(dataset['path']).suffix.lower() != '.'+dataset['type']:
                 raise ProtocolError('INVALID_INPUT: dataset format and path disagree')
             if 'generation_manifest' in dataset:
@@ -102,5 +110,12 @@ def validate_eval_bindings(plan, bindings):
         if case['dataset_id'] not in tester['datasets']:
             raise ProtocolError('INVALID_INPUT: missing case dataset binding')
         dataset = tester['datasets'][case['dataset_id']]
+        native_task = dataset['type'] == 'aisbench_task'
+        if case.get('mode', 'perf') == 'acc':
+            if not native_task:
+                raise ProtocolError('INVALID_INPUT: accuracy case requires an aisbench_task dataset')
+            continue
+        if native_task:
+            raise ProtocolError('INVALID_INPUT: performance case cannot bind an aisbench_task dataset')
         if 'shared_prefix_ratio' in case and dataset['type'] != 'aisbench_synthetic' and 'generation_manifest' not in dataset:
             raise ProtocolError('INVALID_INPUT: prefix dataset requires generation evidence')

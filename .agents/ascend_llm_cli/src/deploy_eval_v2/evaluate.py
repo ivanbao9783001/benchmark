@@ -1,9 +1,14 @@
-"""AISBench external-eval adapter. Caller binds execution to the verified tester."""
+"""AISBench external-eval adapter. Caller binds execution to the verified tester.
+
+Performance and accuracy are peer benchmark modes: both share the health,
+preflight, execution and result envelope, and each owns its native evidence
+pipeline. The mode never falls back to another mode.
+"""
 import json
 import os
 from pathlib import Path
 import time
-from . import aisbench_cli
+from . import aisbench_cli, accuracy_evidence
 from .plan_model import normalize_external_plan, validate_eval_bindings
 from .process_guard import remaining, run_logged
 from .protocol import ProtocolError, now
@@ -34,7 +39,12 @@ def prepare_case(plan, bindings, case_id, folder, check_files=True):
     spec = dict(model={'path': tester['model_path'], 'served_name': plan['service']['model']},
                 benchmark={'datasets': tester['datasets']})
     config = aisbench_cli.write_config(spec, case, plan['service'], folder, check_files=check_files)
-    (folder/'native-expectations.json').write_text(json.dumps([['service', 'dataset']]), encoding='utf-8')
+    if aisbench_cli.task_mode(case) == aisbench_cli.ACC_MODE:
+        dataset = aisbench_cli.accuracy_dataset_for(tester['datasets'][case['dataset_id']])
+        expectations = [[aisbench_cli.MODEL_ABBR, dataset['dataset_abbr']]]
+    else:
+        expectations = [['service', 'dataset']]
+    (folder/'native-expectations.json').write_text(json.dumps(expectations), encoding='utf-8')
     argv = aisbench_cli.commands(tester['aisbench'], config, case, folder)[0][1]
     return case, tester, argv
 
@@ -88,6 +98,19 @@ def execute_external_case(plan, bindings, case_id, folder, cancelled, *, verifie
                          '--result',str(folder/'preflight.json')],folder/'preflight.log',deadline,cancelled,env=environment)
     if preflight or load_json(folder/'preflight.json').get('status')!='VERIFIED':
         raise ProtocolError('INVALID_INPUT: benchmark environment preflight failed')
+    if aisbench_cli.task_mode(case) == aisbench_cli.ACC_MODE:
+        result = run_accuracy_case(plan, tester, case, folder, argv, runner, environment,
+                                   deadline, cancelled, verified_local_host)
+    else:
+        result = run_performance_case(plan, tester, case, folder, argv, runner, environment,
+                                      deadline, cancelled, verified_local_host)
+    (folder/'result.json').write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
+    return result
+
+
+def run_performance_case(plan, tester, case, folder, argv, runner, environment,
+                         deadline, cancelled, verified_local_host):
+    """Perf evidence: request timing/throughput, plus optional prefix routing."""
     if case['reset_cache']:
         from .cache_reset import reset_instances
         reset_instances(plan['service'],folder,deadline,cancelled)
@@ -119,8 +142,8 @@ def execute_external_case(plan, bindings, case_id, folder, cancelled, *, verifie
         else:
             dataset_verified = matches_prefix_target(synthetic, case)
         verified=verified and dataset_verified and prefix['status']=='VERIFIED' and prefix['routing_coverage']=='VERIFIED' and prefix['warmup_route_coverage'] in ('VERIFIED','NOT_REQUESTED')
-    result = dict(schema_version='1.0', service_id=plan['service']['service_id'],
-                  case_id=case_id, execution_status='SUCCEEDED', evidence_status='COMPLETE' if verified else 'PARTIAL',
+    result = dict(schema_version='1.0', evaluation_type='perf', service_id=plan['service']['service_id'],
+                  case_id=case['case_id'], execution_status='SUCCEEDED', evidence_status='COMPLETE' if verified else 'PARTIAL',
                   performance_validity='VERIFIED' if verified else 'UNVERIFIED',
                   performance=performance,
                   performance_evidence=dict(host=verified_local_host,path=str(folder/'performance-evidence.json')),
@@ -130,5 +153,26 @@ def execute_external_case(plan, bindings, case_id, folder, cancelled, *, verifie
                       ('request_count','input_tokens','common_prefix_tokens') if k in synthetic} if synthetic else None)))
     if synthetic is not None:
         result['synthetic_evidence']=dict(status=synthetic['status'],host=verified_local_host,path=str(folder/'synthetic-evidence.json'))
-    (folder/'result.json').write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
     return result
+
+
+def run_accuracy_case(plan, tester, case, folder, argv, runner, environment,
+                      deadline, cancelled, verified_local_host):
+    """Accuracy evidence: native predictions/results; no metrics or cache reset."""
+    dataset = aisbench_cli.accuracy_dataset_for(tester['datasets'][case['dataset_id']])
+    returncode = runner(argv, folder/'aisbench.log', deadline, cancelled, env=environment)
+    (folder/'execution.json').write_text(json.dumps({'returncode': returncode}), encoding='utf-8')
+    validated = accuracy_evidence.validate_accuracy_result(folder, case, dataset,
+                                                            deadline=deadline, cancelled=cancelled)
+    accuracy = accuracy_evidence.summarize(folder, case, dataset, validated,
+                                            deadline=deadline, cancelled=cancelled)
+    verified = accuracy['status'] == 'VERIFIED'
+    return dict(schema_version='1.0', evaluation_type='acc', service_id=plan['service']['service_id'],
+                case_id=case['case_id'], execution_status='SUCCEEDED',
+                evidence_status='COMPLETE' if verified else 'PARTIAL',
+                accuracy_validity='VERIFIED' if verified else 'UNVERIFIED',
+                accuracy=accuracy,
+                accuracy_evidence=dict(host=verified_local_host,path=str(folder/'accuracy-evidence.json')),
+                reason='Native accuracy evidence verified' if verified else
+                       'See accuracy evidence for unverified conditions',
+                time=now(), actual_load=dict(case))

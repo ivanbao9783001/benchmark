@@ -1,9 +1,39 @@
-"""Build a standard AISBench perf config using external data or AISBench native synthetic data."""
+"""Build AISBench native configs for the two peer evaluation modes.
+
+``perf`` measures request performance against generated or bound load;
+``acc`` runs a native AISBench accuracy task and reports its evaluator metric.
+Both branches own their config and command lines; the shared lifecycle lives in
+``evaluate``.
+"""
 import csv
 import json
 import hashlib
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
+
+PERF_MODE = 'perf'
+ACC_MODE = 'acc'
+MODEL_ABBR = 'service'
+# Native accuracy tasks are selected by name; AISBench owns their semantics.
+SUPPORTED_TASKS = {
+    'gpqa_gen_0_shot_str': dict(
+        file='gpqa_diamond.csv',
+        samples=198,
+        dataset_abbr='gpqa_diamond_0_shot_str',
+        dataset_name='gpqa_diamond',
+    ),
+}
+GPQA_PROMPT = ('What is the correct answer to this question: {question}\nChoices:\n'
+               '(A){A}\n(B){B}\n(C){C}\n(D){D}\n'
+               'Format your response as follows: "The correct answer is (insert answer here)"')
+
+
+def task_mode(case):
+    """Return the validated benchmark mode; unknown modes never fall back."""
+    mode = case.get('mode', PERF_MODE)
+    if mode not in (PERF_MODE, ACC_MODE):
+        raise ValueError('AISBench test mode '+repr(mode)+' is reserved but not implemented; no perf fallback')
+    return mode
 
 
 def dataset_digest(path):
@@ -127,7 +157,94 @@ def check_dataset(dataset, count):
         raise ValueError(f'Dataset has {seen} rows; requested {count}')
 
 
+def accuracy_dataset_for(dataset):
+    """Resolve a native AISBench accuracy task binding to fixed task constants."""
+    if not isinstance(dataset, dict) or dataset.get('type') != 'aisbench_task':
+        raise ValueError('Accuracy mode requires an aisbench_task dataset binding')
+    task = dataset.get('task')
+    if task not in SUPPORTED_TASKS:
+        raise ValueError('Unsupported AISBench accuracy task: '+repr(task))
+    spec = SUPPORTED_TASKS[task]
+    directory = str(dataset.get('path', ''))
+    # Bindings are POSIX paths even when the coordinator runs elsewhere.
+    if not (Path(directory).is_absolute() or PurePosixPath(directory.replace('\\', '/')).is_absolute()):
+        raise ValueError('AISBench task dataset path must be absolute: '+directory)
+    return dict(type='aisbench_task', task=task, path=directory, directory=directory,
+                file=spec['file'], dataset_abbr=spec['dataset_abbr'],
+                dataset_name=spec['dataset_name'], samples=spec['samples'])
+
+
+def check_accuracy_dataset(dataset):
+    """Count native task rows with csv.reader; quoted newlines must not matter."""
+    path = Path(dataset['directory'])/dataset['file']
+    seen = 0
+    with path.open(encoding='utf-8-sig', newline='') as stream:
+        for row in csv.reader(stream):
+            if len(row) < 8:
+                raise ValueError('AISBench task dataset row is truncated')
+            if row[7] == 'Question':
+                continue
+            if len(row) < 12:
+                raise ValueError('AISBench task dataset row lacks question and choices')
+            seen += 1
+    if seen != dataset['samples']:
+        raise ValueError(f'AISBench task {dataset["task"]} requires {dataset["samples"]} samples; found {seen}')
+    return dict(type='aisbench_task', task=dataset['task'], path=str(path),
+                samples=seen, status='CHECKED')
+
+
+def write_accuracy_config(spec, case, dataset, service, folder):
+    """Generate a self-contained native accuracy config; no install mutation."""
+    endpoint = urlsplit(service['endpoint'])
+    if endpoint.scheme not in ('http', 'https') or not endpoint.hostname:
+        raise ValueError('Invalid service endpoint')
+    fields = dict(attr=MODEL_ABBR, abbr=MODEL_ABBR, path=spec['model']['path'],
+                  model=spec['model']['served_name'], stream=False, request_rate=0, retry=1,
+                  host_ip=endpoint.hostname, host_port=endpoint.port or (443 if endpoint.scheme == 'https' else 80),
+                  url=service['endpoint'].rstrip('/')+'/', max_out_len=case['max_out_len'],
+                  batch_size=case['concurrency'], trust_remote_code=False,
+                  generation_kwargs={'temperature': 0, 'ignore_eos': False})
+    config = folder/'aisbench-config.py'
+    text = (
+        'from mmengine.config import read_base\n'
+        'from ais_bench.benchmark.models import VLLMCustomAPIChat\n'
+        'from ais_bench.benchmark.datasets import GPQADataset, GPQAEvaluator\n'
+        'from ais_bench.benchmark.openicl.icl_prompt_template import PromptTemplate\n'
+        'from ais_bench.benchmark.openicl.icl_retriever import ZeroRetriever\n'
+        'from ais_bench.benchmark.openicl.icl_inferencer import GenInferencer\n'
+        'from ais_bench.benchmark.partitioners import NaivePartitioner\n'
+        'from ais_bench.benchmark.runners.local import LocalRunner\n'
+        'from ais_bench.benchmark.tasks import OpenICLApiInferTask\n'
+        'from ais_bench.benchmark.utils.postprocess.text_postprocessors import first_option_postprocess\n'
+        'datasets = [dict(\n'
+        f'    type=GPQADataset, abbr={dataset["dataset_abbr"]!r}, '
+        f'path={dataset["directory"]!r}, name={dataset["file"]!r},\n'
+        "    reader_cfg=dict(input_columns=['question', 'A', 'B', 'C', 'D'], output_column='answer'),\n"
+        '    infer_cfg=dict(\n'
+        f'        prompt_template=dict(type=PromptTemplate, template={GPQA_PROMPT!r}),\n'
+        '        retriever=dict(type=ZeroRetriever), inferencer=dict(type=GenInferencer)),\n'
+        '    eval_cfg=dict(evaluator=dict(type=GPQAEvaluator),\n'
+        "                  pred_postprocessor=dict(type=first_option_postprocess, options='ABCD')))]\n"
+        'models = [dict(type=VLLMCustomAPIChat, '+', '.join(f'{k}={v!r}' for k, v in fields.items())+')]\n'
+        'infer = dict(partitioner=dict(type=NaivePartitioner), runner=dict(type=LocalRunner, '
+        'max_num_workers=1, task=dict(type=OpenICLApiInferTask)))\n'
+    )
+    config.write_text(text, encoding='utf-8')
+    (folder/'dataset.json').write_text(json.dumps(dataset, indent=2), encoding='utf-8')
+    return config
+
+
 def write_config(spec, case, service, folder, *, check_files=True):
+    """Generate the native config selected by the case mode."""
+    if task_mode(case) == ACC_MODE:
+        dataset = accuracy_dataset_for(spec['benchmark']['datasets'][case['dataset_id']])
+        if check_files:
+            check_accuracy_dataset(dataset)
+        return write_accuracy_config(spec, case, dataset, service, folder)
+    return write_perf_config(spec, case, service, folder, check_files=check_files)
+
+
+def write_perf_config(spec, case, service, folder, *, check_files=True):
     require_supported_mode(case)
     dataset = dataset_for(spec['benchmark'], case, check_files=check_files)
     synthetic=dataset.get('type')=='aisbench_synthetic'
@@ -173,6 +290,15 @@ def write_config(spec, case, service, folder, *, check_files=True):
 
 
 def commands(executable, config, case, folder):
+    """Return the native command line for the case mode."""
+    if task_mode(case) == ACC_MODE:
+        # Accuracy runs the full native task: infer and evaluate in one pass.
+        return [('benchmark', [executable, str(config), '--mode', 'all',
+                 '--work-dir', str(folder/'outputs')])]
+    return perf_commands(executable, config, case, folder)
+
+
+def perf_commands(executable, config, case, folder):
     require_supported_mode(case)
     warmups = case.get('num_warmups', 1) if case.get('warmup', True) else 0
     # Normal mode writes AISBench worker logs under --work-dir; never use --debug.
@@ -183,9 +309,7 @@ def commands(executable, config, case, folder):
 
 def require_supported_mode(case):
     """Task modes are independent of the coordinator FULL/scripts mode."""
-    mode = case.get('mode', 'perf')
-    if mode != 'perf':
-        raise ValueError('AISBench test mode '+repr(mode)+' is reserved but not implemented; no perf fallback')
+    task_mode(case)
 
 
 def validate_native_result(folder, case):

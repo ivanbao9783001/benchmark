@@ -11,6 +11,14 @@ from .json_io import load_json
 from .protocol import ProtocolError
 
 
+def check_accuracy_imports():
+    """Require the native task classes so an AISBench version drift fails early."""
+    from ais_bench.benchmark.datasets import GPQADataset, GPQAEvaluator
+    from ais_bench.benchmark.utils.postprocess.text_postprocessors import first_option_postprocess
+    return dict(dataset=GPQADataset.__name__, evaluator=GPQAEvaluator.__name__,
+                postprocessor=first_option_postprocess.__name__)
+
+
 def inspect_environment(tester,case,*,config_path=None):
     executable=Path(tester['aisbench'])
     python=Path(tester['python'])
@@ -26,12 +34,17 @@ def inspect_environment(tester,case,*,config_path=None):
             owners.append(dict(name=distribution.metadata['Name'],version=distribution.version))
     if len(owners)!=1:
         raise ProtocolError('INVALID_INPUT: AISBench console entry point ownership ambiguous or absent')
-    data=aisbench_cli.dataset_for({'datasets':tester['datasets']},case,check_files=True)
-    if data.get('type')=='aisbench_synthetic':
-        dataset_evidence=aisbench_cli.check_synthetic_support(case)
+    if aisbench_cli.task_mode(case) == aisbench_cli.ACC_MODE:
+        data=aisbench_cli.accuracy_dataset_for(tester['datasets'][case['dataset_id']])
+        dataset_evidence=aisbench_cli.check_accuracy_dataset(data)
+        dataset_evidence['imports']=check_accuracy_imports()
     else:
-        aisbench_cli.check_dataset(data,case['formal_requests'])
-        dataset_evidence=dict(status='CHECKED',path=data['path'])
+        data=aisbench_cli.dataset_for({'datasets':tester['datasets']},case,check_files=True)
+        if data.get('type')=='aisbench_synthetic':
+            dataset_evidence=aisbench_cli.check_synthetic_support(case)
+        else:
+            aisbench_cli.check_dataset(data,case['formal_requests'])
+            dataset_evidence=dict(status='CHECKED',path=data['path'])
     if config_path is not None:
         from mmengine.config import Config
         config=Config.fromfile(str(config_path))
