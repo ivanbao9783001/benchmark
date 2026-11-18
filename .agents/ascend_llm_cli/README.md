@@ -83,6 +83,12 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 同一规则（`GUARD_ROOT_INVALID`）。启动阶段的失败一律保持 `UNVERIFIED`，必须先核对进程、
 容器和端口状态。
 
+`docker create` 的算力卡来自排布（`npu_ids` → `/dev/davinciN`），不再由默认列表枚举，
+因此不假设卡数（含 8 卡以上）。已分配卡缺失时在任何资源声明之前拒绝，不产生 claim 或命令记录；
+默认 `runtime.container.devices` 只列附属节点，驱动差异导致的缺失（如 `/dev/ummu`、`/dev/uburma`）
+会被跳过并写入 `probes/<digest>.json` 证据。显式列出的设备只有附属节点允许缺失；其他设备缺失
+仍按原行为拒绝，避免设备名写错时静默少挂。显式 `mounts` 仍要求源路径存在，缺失即拒绝。
+
 ## 显式容器逻辑卡映射（本地补丁 local.devicemap1）
 
 `placement.devices` 始终表示宿主物理卡，资源声明、占用检查和收尾不变。

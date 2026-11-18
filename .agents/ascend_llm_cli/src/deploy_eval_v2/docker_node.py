@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import socket
 from .compiler import digest
-from .container_baseline import docker_run_args
+from .container_baseline import DEVICES as OPTIONAL_DEVICES, docker_run_args
 from .process_guard import remaining, Cancelled, run_logged
 from .protocol import ProtocolError
 from .remote_guard import require_owned_container
@@ -16,9 +16,34 @@ from .process_io import bounded_command
 
 
 class DockerNode:
-    def __init__(self, guard, runner=bounded_command):
+    def __init__(self, guard, runner=bounded_command, exists=None):
         self.guard = guard
         self.runner = runner
+        self.exists = exists or (lambda path: Path(path).exists())
+
+    def planned_devices(self, group):
+        """Allocated cards come from the placement; auxiliaries stay optional.
+
+        Paths use physical NPU numbering, so they stay valid under device maps.
+        Only known auxiliary nodes may be absent; any other explicit device is
+        required, so a typo fails before resources are claimed.
+        """
+        planned, seen = [], set()
+        for npu in group['npu_ids']:
+            path = '/dev/davinci'+str(npu)
+            if not self.exists(path):
+                raise ProtocolError('INVALID_INPUT: allocated NPU device unavailable: '+path)
+            planned.append(dict(device=path, present=True))
+            seen.add(path)
+        for device in group['container'].get('devices', []):
+            if device in seen:
+                continue
+            seen.add(device)
+            present = self.exists(device)
+            if not present and device not in OPTIONAL_DEVICES:
+                raise ProtocolError('INVALID_INPUT: required host device unavailable: '+device)
+            planned.append(dict(device=device, present=present))
+        return planned
 
     def call(self, argv, deadline, cancelled):
         if cancelled.is_set():
@@ -43,6 +68,8 @@ class DockerNode:
     def create(self, command_id, group, deadline, cancelled):
         # The coordinator claims all groups before entering the create phase.
         resources = ['npu:'+str(n) for n in group['npu_ids']]+['tcp:'+str(p) for p in group['ports']]
+        # Device presence is a local fact; check it before any claim is written.
+        devices = self.planned_devices(group)
         def action():
             self.guard.claim(resources)
             for device in group['npu_ids']:
@@ -75,10 +102,13 @@ class DockerNode:
             argv = ['docker', 'create', '--name', name, '--label', 'bench.task='+self.guard.owner['task_id'],
                     '--label', 'bench.execution='+self.guard.owner['token'], '--log-driver', 'none']
             argv += docker_run_args(group['container'])
-            for device in group['container']['devices']:
-                if not Path(device).exists():
-                    raise ProtocolError('INVALID_INPUT: required host device unavailable')
-                argv += ['--device', device]
+            for item in devices:
+                if item['present']:
+                    argv += ['--device', item['device']]
+            if any(not item['present'] for item in devices):
+                from .durable import atomic_json
+                atomic_json(self.guard.root/'probes'/(digest([command_id,'devices'])+'.json'),
+                            dict(devices=devices))
             for mount in group['mounts']:
                 if not Path(mount['source']).exists():
                     raise ProtocolError('INVALID_INPUT: required host mount unavailable')
