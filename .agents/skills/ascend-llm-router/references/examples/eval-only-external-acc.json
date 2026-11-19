@@ -1,0 +1,51 @@
+{
+  "schema_version": "top-input/2",
+  "task": {
+    "id": "case-eval-01",
+    "action": "eval_only",
+    "eval_mode": "acc",
+    "control_node": "n1"
+  },
+  "nodes": {
+    "n1": {
+      "host": "example@192.0.2.41",
+      "allowed_root": "/srv/work",
+      "python": "/srv/venvs/deploy-eval/bin/python"
+    }
+  },
+  "evaluation": {
+    "service": {
+      "id": "svc-gpqa-eval",
+      "endpoint": "http://192.0.2.41:8020",
+      "model": "qwen3-8b"
+    },
+    "tester": {
+      "host": "example@192.0.2.41",
+      "work_root": "/srv/work",
+      "python": "/srv/venvs/aisbench/bin/python",
+      "aisbench": "/srv/src/AISBench",
+      "model_path": "/srv/models/Qwen3-8B",
+      "datasets": {
+        "gpqa": {
+          "type": "aisbench_task",
+          "task": "gpqa_gen_0_shot_str",
+          "path": "/srv/datasets/gpqa"
+        }
+      }
+    },
+    "dataset": {
+      "id": "gpqa",
+      "split": "diamond",
+      "scope": "full"
+    },
+    "params": null
+  },
+  "deliverables": {
+    "local_dir": "deploy-runs"
+  },
+  "constraints": [
+    "不修改 .agents/ 下的技能与 CLI 源码",
+    "不读取历史任务目录、归档或回收站",
+    "阶段流程只用 deploy-eval-v2 CLI"
+  ]
+}

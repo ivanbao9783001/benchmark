@@ -1,0 +1,12 @@
+{
+  "case_id": "qwen3-8b-1k256-c16-steady",
+  "mode": "perf",
+  "dataset_id": "synthetic",
+  "concurrency": 16,
+  "input_tokens": 1024,
+  "output_tokens": 256,
+  "steady_state": true,
+  "num_warmups": 1,
+  "reset_cache": false,
+  "timeout_seconds": 3600
+}

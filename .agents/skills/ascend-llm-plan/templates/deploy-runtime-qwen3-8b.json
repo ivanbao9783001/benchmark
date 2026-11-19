@@ -1,0 +1,16 @@
+{
+  "image": "{{image.digest}}",
+  "container": {
+    "shm_size": "500g",
+    "privileged": true,
+    "devices": [
+      "/dev/davinci_manager",
+      "/dev/hisi_hdc",
+      "/dev/devmm_svm",
+      "/dev/ummu",
+      "/dev/uburma",
+      "/dev/davinci{{gpu.0}}",
+      "/dev/davinci{{gpu.1}}"
+    ]
+  }
+}

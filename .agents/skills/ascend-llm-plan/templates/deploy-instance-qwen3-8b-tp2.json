@@ -1,0 +1,40 @@
+{
+  "id": "main",
+  "role": "mixed",
+  "placement": {
+    "node": "{{node.id}}",
+    "devices": [
+      "{{gpu.0}}",
+      "{{gpu.1}}"
+    ]
+  },
+  "launch": {
+    "program": "vllm serve",
+    "preserve_reference": true,
+    "args": {
+      "tensor-parallel-size": 2,
+      "max-model-len": 8192,
+      "gpu-memory-utilization": 0.72,
+      "trust-remote-code": true,
+      "enable-prefix-caching": true
+    },
+    "env": {
+      "HCCL_IF_IP": "{{network.ip}}",
+      "VLLM_HOST_IP": "{{network.ip}}",
+      "GLOO_SOCKET_IFNAME": "{{network.interface}}",
+      "TP_SOCKET_IFNAME": "{{network.interface}}",
+      "HCCL_SOCKET_IFNAME": "{{network.interface}}",
+      "HCCL_IF_BASE_PORT": "{{hccl.base_port}}"
+    },
+    "bootstrap": "source /usr/local/Ascend/ascend-toolkit/set_env.sh\nsource /usr/local/Ascend/cann-9.1.0/share/info/ascendnpu-ir/bin/set_env.sh\nsource /usr/local/Ascend/nnal/atb/set_env.sh --cxx_abi=1"
+  },
+  "ports": {
+    "http": 1,
+    "hccl": 1
+  },
+  "checks": {
+    "health": "/health",
+    "prefix_cache_reset": "/reset_prefix_cache",
+    "metrics": "/metrics"
+  }
+}

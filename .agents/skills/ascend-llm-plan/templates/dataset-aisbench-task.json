@@ -1,0 +1,5 @@
+{
+  "type": "aisbench_task",
+  "task": "gpqa_gen_0_shot_str",
+  "path": "{{dataset.gpqa.root}}"
+}

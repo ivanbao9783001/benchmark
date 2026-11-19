@@ -21,7 +21,7 @@ evaluation.completed 仅表示阶段结束。按结果决定下一 case 或收�
 
 ## 本阶段参考与交付
 
-依赖 CLI >=0.1.0a7、协议 1.0。[测试环境预检](references/benchmark-preflight.md)用于解释环境门控；远端测试器见 [远端测试](references/remote-tester.md)，结果核验见 [结果契约](references/result-validation.md)和[原生证据](references/native-result-evidence.md)，仅清缓存任务读取 [缓存重置](references/cache-reset.md)。共享请求字段见已安装 ascend-llm-router 的 references/cli-contract.md。
+依赖 CLI >=0.1.0a7、协议 1.0。[测试环境预检](references/benchmark-preflight.md)用于解释环境门控；远端测试器见 [远端测试](references/remote-tester.md)，结果核验见 [结果契约](references/result-validation.md)和[原生证据](references/native-result-evidence.md)，仅清缓存任务读取 [缓存重置](references/cache-reset.md)。共享请求字段见已安装 ascend-llm-router 的 references/cli-contract.md。本阶段请求体见 [阶段请求](references/requests.md)，精度与性能共用同一 eval 请求形状。
 
 从 get-status 获取当前版本，使用冻结 service_id/case_id 提交 eval；RUNNING 时按 next_cursor 等待。保持 tester.environment 一致，进程使用直接 Python 启动。交付结果引用、实际负载、三项状态与清理证据；外部服务不交给 release 停止。缺少对应模式的证据时保留 UNVERIFIED。
 

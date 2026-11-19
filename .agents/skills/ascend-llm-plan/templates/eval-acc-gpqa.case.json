@@ -1,0 +1,8 @@
+{
+  "case_id": "gpqa_diamond_acc",
+  "mode": "acc",
+  "dataset_id": "gpqa",
+  "concurrency": 8,
+  "max_out_len": 512,
+  "timeout_seconds": 3600
+}

@@ -1,0 +1,105 @@
+{
+  "schema_version": "top-input/2",
+  "task": {
+    "id": "case-pd-single-01",
+    "action": "deploy_and_eval",
+    "eval_mode": "perf",
+    "on_idle": "release_owned",
+    "control_node": "n1"
+  },
+  "nodes": {
+    "n1": {
+      "host": "example@192.0.2.21",
+      "allowed_root": "/srv/work",
+      "python": "/srv/venvs/deploy-eval/bin/python",
+      "guard_root": "/srv/guard",
+      "model_paths": {
+        "qwen3-8b": "/srv/models/Qwen3-8B"
+      },
+      "network": {
+        "ip": "192.0.2.21",
+        "interface": "eth0"
+      },
+      "paths": {
+        "proxy_program": "/srv/src/pd_proxy.py"
+      },
+      "authorization": {
+        "preempt_other_processes": false,
+        "create_work_root": true
+      }
+    }
+  },
+  "deployment": {
+    "id": "case-pd-single-01",
+    "topology": "pd",
+    "model": {
+      "id": "qwen3-8b",
+      "served_name": "qwen3-8b"
+    },
+    "image": null,
+    "kv_transfer": {
+      "connector": "MooncakeConnectorV2"
+    },
+    "instances": [
+      {
+        "id": "prefill",
+        "role": "prefill",
+        "node": "n1",
+        "devices": [0, 1, 2, 3],
+        "args": null,
+        "ports": {
+          "http": 8020,
+          "kv": 12000
+        }
+      },
+      {
+        "id": "decode",
+        "role": "decode",
+        "node": "n1",
+        "devices": [4, 5, 6, 7],
+        "args": null,
+        "ports": {
+          "http": 8030,
+          "kv": 12010
+        }
+      },
+      {
+        "id": "proxy",
+        "role": "proxy",
+        "node": "n1",
+        "args": null,
+        "ports": {
+          "http": 8000
+        }
+      }
+    ],
+    "endpoint": {
+      "instance": "proxy",
+      "port": "http"
+    }
+  },
+  "evaluation": {
+    "tester": {
+      "host": "example@192.0.2.21",
+      "work_root": "/srv/work",
+      "python": "/srv/venvs/aisbench/bin/python",
+      "aisbench": "/srv/src/AISBench",
+      "model_path": "/srv/models/Qwen3-8B",
+      "datasets": {
+        "synthetic": {
+          "type": "aisbench_synthetic"
+        }
+      }
+    },
+    "dataset": null,
+    "params": null
+  },
+  "deliverables": {
+    "local_dir": "deploy-runs"
+  },
+  "constraints": [
+    "不修改 .agents/ 下的技能与 CLI 源码",
+    "不读取历史任务目录、归档或回收站",
+    "阶段流程只用 deploy-eval-v2 CLI"
+  ]
+}

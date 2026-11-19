@@ -17,6 +17,6 @@ description: Deploy and Eval v2 的部署阶段交接与事件处理，检查冻
 
 ## 本阶段参考与交付
 
-依赖 CLI >=0.1.0a7、协议 1.0。发布前读取 [现场验收](references/host-acceptance.md)，启动及身份恢复见 [Python runtime](references/launcher.md)。输入 Schema 使用 `export-contracts` 从当前 CLI 导出；共享请求格式见 ascend-llm-router 的 references/cli-contract.md。
+依赖 CLI >=0.1.0a7、协议 1.0。发布前读取 [现场验收](references/host-acceptance.md)，启动及身份恢复见 [Python runtime](references/launcher.md)。输入 Schema 使用 `export-contracts` 从当前 CLI 导出；共享请求格式见 ascend-llm-router 的 references/cli-contract.md。本阶段请求体见 [阶段请求](references/requests.md)。
 
-接收冻结输入、runtime 包、control 配置及授权证据。依次执行 check-ready、publish-task、start-task、get-status、deploy；保存原 nonce 与摘要。runtime 使用独立 Python 进程，日志在任务目录，不依赖 systemd。返回 deployment.ready 后交付 service_id、健康/冒烟证据、当前版本及游标。未知启动结果查回执和状态，不重复启动。
+接收冻结输入、runtime 包、control 配置（用户预置或 plan 交付）及授权证据；使用前核对 `tasks` 键与 task_ref 一致。依次执行 check-ready、publish-task、start-task、get-status、deploy；保存原 nonce 与摘要。runtime 使用独立 Python 进程，日志在任务目录，不依赖 systemd。返回 deployment.ready 后交付 service_id、健康/冒烟证据、当前版本及游标。未知启动结果查回执和状态，不重复启动。
