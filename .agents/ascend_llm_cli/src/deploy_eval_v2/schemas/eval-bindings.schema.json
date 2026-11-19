@@ -110,7 +110,16 @@
         },
         "host_python": {
           "$ref": "#/$defs/path"
+        },
+        "container_work_root": {
+          "$ref": "#/$defs/path",
+          "description": "Container-internal counterpart of work_root when the borrowed container does not expose the host work root at the same path; only valid together with container."
         }
+      },
+      "dependentRequired": {
+        "container_work_root": [
+          "container"
+        ]
       }
     },
     "dataset": {

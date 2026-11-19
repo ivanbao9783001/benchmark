@@ -173,6 +173,10 @@ class OwnedExecutor:
                 ['npu:'+str(n) for n in groups[k]['npu_ids']]+['tcp:'+str(p) for p in groups[k]['ports']]})
             try:
                 containers=[service['containers'][k]['container_id'] for k in keys]
+                if getattr(node,'existing_container',False) is True:
+                    results[name]=node.release_existing('release-'+operation,containers,resources,
+                                                        folder/(name+'-resources.json'))
+                    continue
                 if getattr(node,'remote',False) is True:
                     results[name]=node.release_resources('release-'+operation,containers)
                     continue

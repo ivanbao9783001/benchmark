@@ -12,6 +12,7 @@ import threading
 import time
 from .compiler import verify_frozen
 from .docker_node import DockerNode
+from .existing_container_node import ExistingContainerNode
 from .durable import atomic_json
 from .json_io import unique_object,reject_constant,load_json
 from .protocol import ProtocolError,encode,envelope
@@ -42,10 +43,16 @@ def dispatch(root,request,*,guard_root=None,node_factory=DockerNode):
     if values['plan.json']['task_id']!=request['task_id'] or values['plan.json']['intent']!='deploy':
         raise ProtocolError('INVALID_INPUT: node task identity')
     compiled=values['compiled.json']
+    existing=(values['plan.json'].get('deployment',{}).get('runtime',{})
+              .get('mode','owned_container')=='existing_container')
     groups={key:g for key,g in compiled['topology']['groups'].items() if g['node']==request['node']}
     if not groups or any(Path(g['root']).resolve()!=root.resolve() for g in groups.values()):
         raise ProtocolError('INVALID_INPUT: node root binding mismatch')
-    if node_factory is DockerNode:
+    if existing and any('container_root' not in g for g in groups.values()):
+        raise ProtocolError('INVALID_INPUT: existing container compilation')
+    if node_factory is DockerNode and existing:
+        node_factory=ExistingContainerNode
+    if node_factory in (DockerNode,ExistingContainerNode):
         from .executor_factory import local_machine_id
         if values['bindings.json']['nodes'][request['node']].get('machine_id')!=local_machine_id():
             raise ProtocolError('INVALID_INPUT: remote node machine identity mismatch')
@@ -74,7 +81,10 @@ def dispatch(root,request,*,guard_root=None,node_factory=DockerNode):
             raise ProtocolError('INVALID_INPUT: node binding missing')
         guard_root=resolve_guard_root(binding,str(root))
     guard=HostGuard(guard_root,request['task_id'],request['token'])
-    node=node_factory(guard)
+    if node_factory is ExistingContainerNode:
+        node=node_factory(guard,values['bindings.json']['nodes'][request['node']].get('container'))
+    else:
+        node=node_factory(guard)
     deadline=time.monotonic()+timeout
     cancelled=threading.Event()
     action=request['action']
@@ -110,7 +120,10 @@ def dispatch(root,request,*,guard_root=None,node_factory=DockerNode):
         resources=sorted({r for g in groups.values() for r in
             ['npu:'+str(n) for n in g['npu_ids']]+['tcp:'+str(p) for p in g['ports']]})
         evidence=root/'results'/'node'/(command+'.json')
-        if request['keep_claims']:
+        if existing:
+            result=node.release_existing(command,containers,resources,evidence,
+                                         keep_claims=request['keep_claims'],timeout=min(timeout,3600))
+        elif request['keep_claims']:
             def clean_known():
                 entries=release_known(containers,request['task_id'],request['token'],node.runner,deadline)
                 atomic_json(evidence,dict(containers=entries,claims_released=False))

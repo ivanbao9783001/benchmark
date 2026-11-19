@@ -15,21 +15,28 @@
   },
   "evaluation": {
     "service": {
-      "id": "svc-gpqa-eval",
+      "service_id": "svc-gpqa-eval",
       "endpoint": "http://192.0.2.41:8020",
       "model": "qwen3-8b"
     },
     "tester": {
       "host": "example@192.0.2.41",
       "work_root": "/srv/work",
-      "python": "/srv/venvs/aisbench/bin/python",
-      "aisbench": "/srv/src/AISBench",
-      "model_path": "/srv/models/Qwen3-8B",
+      "python": "/workspace/venvs/aisbench/bin/python",
+      "aisbench": "/workspace/venvs/aisbench/bin/ais_bench",
+      "model_path": "/models/Qwen3-8B",
+      "machine_id": "0123456789abcdef0123456789abcdef",
+      "host_python": "/usr/bin/python3",
+      "container": {
+        "id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "image": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "container_work_root": "/srv/containers/tester",
       "datasets": {
         "gpqa": {
           "type": "aisbench_task",
           "task": "gpqa_gen_0_shot_str",
-          "path": "/srv/datasets/gpqa"
+          "path": "/datasets/gpqa"
         }
       }
     },
@@ -37,11 +44,10 @@
       "id": "gpqa",
       "split": "diamond",
       "scope": "full"
-    },
-    "params": null
+    }
   },
   "deliverables": {
-    "local_dir": "deploy-runs"
+    "local_dir": "/srv/work/deliverables"
   },
   "constraints": [
     "不修改 .agents/ 下的技能与 CLI 源码",

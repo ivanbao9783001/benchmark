@@ -18,22 +18,24 @@
 | `eval-perf-synthetic.case.json` | 性能 case | `task.json.cases[]`（stage=eval） |
 | `dataset-aisbench-task.json` | 原生数据集绑定 | `task.json.tester.datasets.gpqa` |
 | `dataset-synthetic.json` | 合成数据集绑定 | `task.json.tester.datasets.synthetic` |
-| `deploy-runtime-qwen3-8b.json` | 容器运行时 | `deployment.runtime` |
+| `deploy-runtime-qwen3-8b.json` | owned 容器运行时 | `deployment.runtime` |
+| `deploy-runtime-existing-container.json` | 借用已有容器运行时 | `deployment.runtime` |
 | `deploy-instance-qwen3-8b-tp2.json` | 单实例启动档 | `deployment.instances[0]` |
 
 ## 模板不覆盖的内容
 
-模板只覆盖上表“嵌入位置”列的 5 个路径。完整输入还需：
+模板只覆盖上表“嵌入位置”列的 7 个路径。完整输入还需：
 
 | 缺口 | 去哪取 |
 | --- | --- |
-| `stage`、`destination` | 本次任务与授权的工作目录 |
+| `stage`、`destination` | 本次任务与授权的工作目录；`destination` 必须是 `<deliverables.local_dir>/<task.id>/` 下的新文件或新目录 |
 | `deployment` 顶层：`schema_version`、`task_id`、`intent`、`id`、`topology`、`model`、`endpoint`、`connections`（必填，可为 `{}`），以及 `instances` 数组 | 字段语义见 references/plan-contract.md；结构由 `export-contracts` 导出；`instances[0]` 由启动档模板填充 |
 | `policy`、`execution`（超时、重试、空闲动作） | 按授权与需求确定，不是模板默认值 |
-| `bindings` 全部（host、work_dir、machine_id、model_paths、mounts、network、ports） | 现场发现并取证，禁止跨机复制 |
-| `tester`（host、python、aisbench、datasets、machine_id） | 现场发现；数据集绑定模板只提供 `datasets` 里的一个条目 |
+| `unresolved` | 必填数组：如实列出未决项，冻结前必须为空；不得凭猜测填默认值 |
+| `bindings` 全部（host、work_dir、machine_id、model_paths、mounts、network、ports） | 现场发现并取证，禁止跨机复制；借用容器时改为 `container` 与 `container_work_root`，不写 `mounts` |
+| `tester`（host、python、aisbench、datasets、machine_id） | 现场发现；`machine_id` 是 check-ready 的硬门槛；数据集绑定模板只提供 `datasets` 里的一个条目 |
 
-组装完成后先用 `prepare-inputs` 校验，再进入 draft-review；schema 缺项会拒绝，但不要依赖报错来发现缺块。
+组装完成后：独立部署（`deploy_only`）或独立测试（`eval_only`）先用 `prepare-inputs` 校验，再进入 draft-review；`deploy_and_eval` 不经过 `prepare-inputs`，直接进入 draft-review（schema 与摘要校验等价）。schema 缺项会拒绝，但不要依赖报错来发现缺块。
 
 ## 精度 case（GPQA-Diamond）
 
@@ -120,6 +122,8 @@
 
 拆成两个文件，避免整段贴错层级：`deploy-runtime-qwen3-8b.json` 整体贴到 `deployment.runtime`；`deploy-instance-qwen3-8b-tp2.json` 整体贴到 `deployment.instances[0]`。
 
+借用已有容器时，`deployment.runtime` 改用 `deploy-runtime-existing-container.json`（只有 `{"mode":"existing_container"}`），`deployment.image` **省略**（不要写 `null`），也不需要 `{{image.digest}}`；容器身份写入 bindings 的 `container`，并补 `container_work_root`。tester 在容器内时同样写 `container` 与 `container_work_root`；容器内可直接补 `host_python`，缺省 `/usr/bin/python3`。启动档仍可描述实例与参数，但 `shm_size`、`privileged`、`devices` 等容器创建参数不会生效（容器已存在），不要据此假定可以调整容器规格，也不要假定工作根目录不存在。
+
 ### 替换清单（提交前必须全部消除）
 
 | 占位符 | 替换为 | 来源 |
@@ -127,7 +131,7 @@
 | `{{image.digest}}` | 本机镜像的 `sha256:...` | 现场镜像清单，不得跨机复用 |
 | `{{gpu.0}}` `{{gpu.1}}` | 卡号数字，如 `6`、`7` | 用户授权 + 占用检查；同时出现在 `placement.devices` 与 `/dev/davinci` 后缀 |
 | `{{node.id}}` | 部署节点名，如 `node1` | bindings |
-| `{{hccl.base_port}}` | HCCL 基端口，如 `64023` | bindings 端口分配 |
+| `{{hccl.base_port}}` | HCCL 基端口，如 `64023` | bindings 端口分配：默认 64023，被占用时顺延；top_input 不写该值 |
 | `{{network.ip}}` | 节点 IP | bindings |
 | `{{network.interface}}` | 网卡名 | bindings |
 | `{{dataset.gpqa.root}}` | 数据集目录，如 `/home/baoyifan/dataset/gpqa` | 测试机实际路径 |
@@ -145,7 +149,7 @@
 | `gpu-memory-utilization` | 0.72 | 见故障记录 |
 | `shm_size` | `500g` | 与镜像基线一致 |
 | `enable-prefix-caching` | `true` | 性能 case 需要清缓存接口时保留 |
-| `ports` / `checks` | http=1、hccl=1；`/health`、`/reset_prefix_cache`、`/metrics` | 须与被测服务实际路由一致 |
+| `ports` / `checks` | http=1、hccl=1；`/health`、`/reset_prefix_cache`、`/metrics` | plan 的端口值是**跨度宽度**（1 表示单端口，schema 允许 1..256），不是基址；真实基址以 bindings 为准（两处键名集合必须一致，跨度不得互相覆盖）；`/metrics` 路由须与实际服务一致 |
 
 故障记录（2026-11-18，同一机器）：
 

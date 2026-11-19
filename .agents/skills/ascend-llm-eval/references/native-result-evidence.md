@@ -18,9 +18,10 @@ cancellation are checked while reading. Symlink/out-of-operation detail paths ar
 rejected. These limits are execution safeguards, not changes to requested load.
 
 Passing native requests does not establish a valid steady-state window or server
-metric agreement. The result keeps performance_validity=UNVERIFIED until those
-separate evidence checks are implemented and satisfied. Local tests use generated
-native-format evidence, not a real AISBench run.
+metric agreement. Those separate checks are implemented in performance_evidence.py
+and result-validation.md; the result keeps performance_validity=UNVERIFIED until
+they are satisfied. Local tests use generated native-format evidence, not a real
+AISBench run.
 
 This module covers the `perf` branch only. `mode=acc` uses accuracy_evidence.py,
 which validates native GPQA predictions/results/logs and forwards the evaluator's

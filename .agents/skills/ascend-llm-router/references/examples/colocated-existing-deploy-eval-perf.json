@@ -1,0 +1,87 @@
+{
+  "schema_version": "top-input/2",
+  "task": {
+    "id": "case-perf-existing-01",
+    "action": "deploy_and_eval",
+    "eval_mode": "perf",
+    "on_idle": "release_owned",
+    "control_node": "n1"
+  },
+  "nodes": {
+    "n1": {
+      "host": "example@192.0.2.11",
+      "allowed_root": "/srv/work",
+      "python": "/srv/venvs/deploy-eval/bin/python",
+      "guard_root": "/srv/guard",
+      "model_paths": {
+        "qwen3-8b": "/models/Qwen3-8B"
+      },
+      "network": {
+        "ip": "192.0.2.11",
+        "interface": "eth0"
+      },
+      "container": {
+        "id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "image": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "container_work_root": "/srv/containers/work",
+      "authorization": {
+        "preempt_other_processes": false,
+        "create_work_root": true
+      }
+    }
+  },
+  "deployment": {
+    "id": "case-perf-existing-01",
+    "topology": "colocated",
+    "model": {
+      "id": "qwen3-8b",
+      "served_name": "qwen3-8b"
+    },
+    "instances": [
+      {
+        "id": "srv",
+        "role": "mixed",
+        "node": "n1",
+        "devices": [6, 7],
+        "ports": {
+          "http": 8020
+        }
+      }
+    ],
+    "endpoint": {
+      "instance": "srv",
+      "port": "http"
+    }
+  },
+  "evaluation": {
+    "tester": {
+      "host": "example@192.0.2.11",
+      "work_root": "/srv/work",
+      "python": "/workspace/venvs/aisbench/bin/python",
+      "aisbench": "/workspace/venvs/aisbench/bin/ais_bench",
+      "model_path": "/models/Qwen3-8B",
+      "machine_id": "0123456789abcdef0123456789abcdef",
+      "host_python": "/usr/bin/python3",
+      "container": {
+        "id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "image": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "container_work_root": "/srv/containers/tester",
+      "datasets": {
+        "synthetic": {
+          "type": "aisbench_synthetic"
+        }
+      }
+    }
+  },
+  "deliverables": {
+    "local_dir": "/srv/work/deliverables"
+  },
+  "constraints": [
+    "不修改 .agents/ 下的技能与 CLI 源码",
+    "不创建、启动、停止或删除已有容器",
+    "不读取历史任务目录、归档或回收站",
+    "阶段流程只用 deploy-eval-v2 CLI"
+  ]
+}

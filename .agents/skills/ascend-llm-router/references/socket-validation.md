@@ -1,6 +1,6 @@
 # Model-free Linux socket acceptance
 
-Requires CLI 0.1.0a4, SSH, Linux Python >=3.11 with jsonschema, and permission to create task processes and files. No model, Docker or NPU is used. Stage results are SIMULATED and performance is UNVERIFIED. This is not production validation.
+Requires CLI 0.1 (patch version per `deploy-eval-v2 --version`), SSH, Linux Python >=3.11 with jsonschema, and permission to create task processes and files. No model, Docker or NPU is used. Stage results are SIMULATED and performance is UNVERIFIED. This is not production validation.
 
 Create a new task_ref and a new absolute task root below the authorized work root. Create control.json with tasks[TASK] containing host, root, allowed_root and absolute python. Generate and save a 64-character hex nonce once. Write start.json containing exactly task_ref and nonce.
 

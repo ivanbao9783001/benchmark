@@ -31,7 +31,7 @@ be checked on site by the guarded deployment executor. Provenance is in topology
 checks this plan but still reports production_ready=false; it is not deployment
 approval. Existing review digest checks remain necessary.
 
-## 公开参考脚本绑定规则（CLI 0.1.0a8）
+## 公开参考脚本绑定规则
 
 参考脚本是用户提供的部署配置来源，不是要由Agent直接运行的旁路。将启动前shell内容放在 launch.bootstrap；将确定的export放在launch.env；vllm serve后的选项放在launch.args（键不带--）。unset和source保留在bootstrap；依赖shell展开的export（如LD_LIBRARY_PATH）保留bootstrap，不能在env中写$变量并期待展开。最终执行顺序为：日志重定向、bootstrap、env导出、exec编译后的argv。bootstrap中使用的绑定变量必须在bootstrap自身赋值，不能依赖随后才导出的env。
 
@@ -55,7 +55,7 @@ placement.devices是物理设备ID；同一物理主机只使用一个node身份
 
 ### 容器设备与挂载的实际契约
 
-CLI 0.1.0a13 的 runtime.container 默认值为 user=root、pid_mode=host、shm_size=500g；privileged 必须显式审阅为 true/false。未指定 container.devices 时，默认设备路径为 /dev/davinci_manager、/dev/hisi_hdc、/dev/ummu、/dev/uburma 和 /dev/davinci0 至 /dev/davinci7。/dev/devmm_svm 不属于此默认集合；不能仅因历史平台的设备路径不存在就推断当前默认集合缺失。通过 draft-review 的 effective_container/container_defaults 及冻结 compiled.json 核对本次实际值，再按实际值现场检查。显式 devices 替换默认集合时必须有平台和现场依据，不为避开预检任意删设备。
+当前 CLI 的 runtime.container 默认值为 user=root、pid_mode=host、shm_size=500g；privileged 必须显式审阅为 true/false。未指定 container.devices 时，默认设备路径为 /dev/davinci_manager、/dev/hisi_hdc、/dev/ummu、/dev/uburma 和 /dev/davinci0 至 /dev/davinci7。/dev/devmm_svm 不属于此默认集合；不能仅因历史平台的设备路径不存在就推断当前默认集合缺失。通过 draft-review 的 effective_container/container_defaults 及冻结 compiled.json 核对本次实际值，再按实际值现场检查。显式 devices 替换默认集合时必须有平台和现场依据，不为避开预检任意删设备。
 
 container.devices 是容器可见设备集合，placement.devices 是模型实例使用的物理卡集合；仍须完整保持用户 DP/TP 拓扑且禁止抢占在用卡。设备路径可为目录（如 ummu/uburma），以现场存在性及执行器预检为准。
 

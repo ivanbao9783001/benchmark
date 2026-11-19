@@ -1,13 +1,13 @@
 # 阶段请求
 
-评测任务的 `service_id` 来自部署产出的 `service.json`；外部服务来自 `prepare-inputs` 归一化后的 service handle。
+评测任务的 `service_id` 必须取自部署产出的 `service.json`（`service_id` 字段），不得按 `svc-<deployment_task_id>` 等命名规则自行拼接；外部服务取 `prepare-inputs` 归一化后的 service handle。
 
 ## eval
 
 ```json
 {
   "task_ref": "<eval_task_id>",
-  "service_id": "svc-<deployment_task_id>",
+  "service_id": "<service.json 或 service handle 中的 service_id>",
   "case_id": "<case_id>",
   "request_id": "eval-001",
   "expected_version": 1

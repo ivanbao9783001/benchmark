@@ -1,22 +1,29 @@
 {
   "schema_version": "top-input/2",
   "task": {
-    "id": "case-deploy-01",
+    "id": "case-deploy-only-01",
     "action": "deploy_only",
     "on_idle": "keep_service",
     "control_node": "n1"
   },
   "nodes": {
     "n1": {
-      "host": "example@192.0.2.51",
+      "host": "example@192.0.2.31",
       "allowed_root": "/srv/work",
       "python": "/srv/venvs/deploy-eval/bin/python",
       "guard_root": "/srv/guard",
       "model_paths": {
-        "qwen3-8b": "/srv/models/Qwen3-8B"
+        "qwen3-8b": "/models/Qwen3-8B"
       },
-      "network": null,
-      "paths": null,
+      "network": {
+        "ip": "192.0.2.31",
+        "interface": "eth0"
+      },
+      "container": {
+        "id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "image": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "container_work_root": "/srv/containers/work",
       "authorization": {
         "preempt_other_processes": false,
         "create_work_root": true
@@ -24,20 +31,18 @@
     }
   },
   "deployment": {
-    "id": "case-deploy-01",
+    "id": "case-deploy-only-01",
     "topology": "colocated",
     "model": {
       "id": "qwen3-8b",
       "served_name": "qwen3-8b"
     },
-    "image": null,
     "instances": [
       {
         "id": "srv",
         "role": "mixed",
         "node": "n1",
         "devices": [6, 7],
-        "args": null,
         "ports": {
           "http": 8020
         }
@@ -49,10 +54,11 @@
     }
   },
   "deliverables": {
-    "local_dir": "deploy-runs"
+    "local_dir": "/srv/work/deliverables"
   },
   "constraints": [
     "不修改 .agents/ 下的技能与 CLI 源码",
+    "不创建、启动、停止或删除已有容器",
     "不读取历史任务目录、归档或回收站",
     "阶段流程只用 deploy-eval-v2 CLI"
   ]

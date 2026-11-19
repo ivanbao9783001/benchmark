@@ -125,35 +125,14 @@ class TemplateTest(unittest.TestCase):
 
 
 ROUTER = SKILLS / "ascend-llm-router"
-TOP_TEMPLATE = ROUTER / "templates" / "top-input.json"
 TOP_DOC = ROUTER / "references" / "top-input.md"
 EXAMPLES = ROUTER / "references" / "examples"
-TOP_BINDINGS = {
-    "task.id": "case-demo-01",
-    "node.id": "node1",
-    "node.host": "user@host",
-    "node.allowed_root": "/srv/work",
-    "node.python": "/srv/venv/bin/python",
-    "node.guard_root": "/srv/guard",
-    "model.id": "qwen3-8b",
-    "node.model_path": "/srv/models/Qwen3-8B",
-    "model.served_name": "qwen3-8b",
-    "device.0": "6",
-    "device.1": "7",
-    "tester.host": "user@host",
-    "tester.work_root": "/srv/work",
-    "tester.python": "/srv/aisbench/bin/python",
-    "tester.aisbench": "/srv/src/AISBench",
-    "tester.model_path": "/srv/models/Qwen3-8B",
-    "deliverables.local_dir": "deploy-runs",
-}
 EXAMPLE_NAMES = {
-    "colocated-deploy-eval-perf.json",
-    "colocated-deploy-only.json",
-    "pd-single-host-deploy-eval-perf.json",
-    "pd-dual-host-deploy-eval-perf.json",
+    "colocated-existing-deploy-eval-perf.json",
+    "colocated-existing-deploy-eval-acc.json",
+    "colocated-existing-deploy-only.json",
+    "pd-dual-host-existing-deploy-only.json",
     "eval-only-external-acc.json",
-    "release-only.json",
 }
 ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$")
 DEPLOY_ACTIONS = {"deploy_and_eval", "deploy_only"}
@@ -193,6 +172,15 @@ def check_example(data):
             assert isinstance(node["authorization"]["preempt_other_processes"], bool)
         for value in node.get("model_paths", {}).values():
             assert value.startswith("/")
+        if "container" in node:
+            assert set(node["container"]) == {"id", "image"}
+            assert re.fullmatch(r"[a-f0-9]{64}", node["container"]["id"]), node["container"]["id"]
+            assert re.fullmatch(r"sha256:[a-f0-9]{64}", node["container"]["image"]), node["container"]["image"]
+            assert node["container_work_root"].startswith("/")
+            assert ":" not in node["container_work_root"]
+            assert node.get("network"), "existing container requires network"
+        else:
+            assert "container_work_root" not in node
     hosts = [node["host"].split("@")[-1] for node in nodes.values()]
     assert len(hosts) == len(set(hosts)), "duplicate host"
     if action in EVAL_ACTIONS:
@@ -208,6 +196,8 @@ def check_example(data):
         dep = data["deployment"]
         assert dep["id"] == task_id
         assert dep["topology"] in {"colocated", "pd"}
+        if "image" in dep:
+            assert re.fullmatch(r"sha256:[a-f0-9]{64}", dep["image"])
         instances = dep["instances"]
         ids = [item["id"] for item in instances]
         assert len(ids) == len(set(ids))
@@ -259,6 +249,12 @@ def check_example(data):
         tester = evaluation["tester"]
         for key in ("host", "work_root", "python", "aisbench", "model_path", "datasets"):
             assert key in tester, key
+        if "container" in tester:
+            assert set(tester["container"]) == {"id", "image"}
+            assert tester["container_work_root"].startswith("/")
+            assert ":" not in tester["container_work_root"]
+        if "host_python" in tester:
+            assert tester["host_python"].startswith("/")
         assert tester["datasets"] and isinstance(tester["datasets"], dict)
         if task["eval_mode"] == "acc":
             assert set(evaluation.get("dataset") or {}) == {"id", "split", "scope"}
@@ -281,65 +277,9 @@ def check_example(data):
     assert local_dir and not local_dir.rstrip("/").endswith("/" + task_id)
 
 
-class TopInputTest(unittest.TestCase):
+class TopInputDocTest(unittest.TestCase):
     def setUp(self):
-        self.template = json.loads(TOP_TEMPLATE.read_text(encoding="utf-8"))
         self.doc = TOP_DOC.read_text(encoding="utf-8")
-
-    def test_template_is_v2_with_entity_tables(self):
-        self.assertEqual(self.template["schema_version"], "top-input/2")
-        self.assertTrue({"task", "nodes", "deployment", "evaluation"} <= set(self.template))
-        legacy = {"case_id", "objective", "target", "control", "authorization", "hints"}
-        self.assertEqual(legacy & set(self.template), set())
-
-    def test_site_values_default_to_null(self):
-        node = next(iter(self.template["nodes"].values()))
-        self.assertIsNone(node["network"])
-        self.assertIsNone(node["paths"])
-        self.assertIsNone(self.template["deployment"]["image"])
-        self.assertIsNone(self.template["evaluation"]["params"])
-
-    def test_required_values_are_placeholders(self):
-        self.assertTrue(self.template["task"]["id"].startswith("{{"))
-        node_id, node = next(iter(self.template["nodes"].items()))
-        self.assertTrue(node_id.startswith("{{"))
-        for key in ("host", "allowed_root", "python", "guard_root"):
-            self.assertTrue(node[key].startswith("{{"), key)
-        model_id, path = next(iter(node["model_paths"].items()))
-        self.assertTrue(model_id.startswith("{{") and path.startswith("{{"))
-        instance = self.template["deployment"]["instances"][0]
-        self.assertTrue(instance["node"].startswith("{{"))
-        for device in instance["devices"]:
-            self.assertTrue(device.startswith("{{"), device)
-        self.assertTrue(self.template["deliverables"]["local_dir"].startswith("{{"))
-
-    def test_template_carries_no_case_parameters(self):
-        text = TOP_TEMPLATE.read_text(encoding="utf-8")
-        for key in ("concurrency", "formal_requests", "timeout_seconds", "tensor_parallel"):
-            self.assertNotIn(key, text)
-
-    def test_filled_template_is_internally_consistent(self):
-        filled = fill(self.template, TOP_BINDINGS)
-        node_id = TOP_BINDINGS["node.id"]
-        model_id = TOP_BINDINGS["model.id"]
-        instance = filled["deployment"]["instances"][0]
-        self.assertEqual(filled["deployment"]["id"], filled["task"]["id"])
-        self.assertEqual(filled["task"]["control_node"], node_id)
-        self.assertEqual(instance["node"], node_id)
-        self.assertIn(node_id, filled["nodes"])
-        self.assertIn(model_id, filled["nodes"][node_id]["model_paths"])
-        self.assertEqual(len(instance["devices"]), 2)
-        self.assertEqual(filled["deployment"]["endpoint"]["instance"], instance["id"])
-        self.assertIn("http", instance["ports"])
-
-    def test_every_placeholder_is_documented(self):
-        for token in TOKEN.findall(TOP_TEMPLATE.read_text(encoding="utf-8")):
-            self.assertIn("{{" + token + "}}", self.doc, "undocumented placeholder: " + token)
-
-    def test_documented_placeholders_exist_in_template(self):
-        tokens = set(TOKEN.findall(TOP_TEMPLATE.read_text(encoding="utf-8")))
-        for token in TOKEN.findall(self.doc):
-            self.assertIn(token, tokens, "stale placeholder in doc: " + token)
 
     def test_router_references_contract(self):
         text = (ROUTER / "SKILL.md").read_text(encoding="utf-8")
@@ -383,18 +323,28 @@ class TopInputExampleTest(unittest.TestCase):
     def test_examples_cover_topologies_and_actions(self):
         data = {name: json.loads(path.read_text(encoding="utf-8"))
                 for name, path in self.paths.items()}
-        self.assertEqual(data["colocated-deploy-eval-perf.json"]["deployment"]["topology"], "colocated")
-        self.assertEqual(data["pd-single-host-deploy-eval-perf.json"]["deployment"]["topology"], "pd")
-        dual = data["pd-dual-host-deploy-eval-perf.json"]
-        self.assertEqual(dual["deployment"]["topology"], "pd")
-        self.assertEqual(len(dual["nodes"]), 2)
-        self.assertEqual(len({i["node"] for i in dual["deployment"]["instances"]}), 2)
-        deploy_only = data["colocated-deploy-only.json"]
+        deploy_only = data["colocated-existing-deploy-only.json"]
         self.assertEqual(deploy_only["task"]["action"], "deploy_only")
         self.assertEqual(deploy_only["task"]["on_idle"], "keep_service")
         self.assertNotIn("evaluation", deploy_only)
-        self.assertEqual(data["eval-only-external-acc.json"]["task"]["action"], "eval_only")
-        self.assertEqual(data["release-only.json"]["task"]["action"], "release_only")
+        self.assertIn("container", deploy_only["nodes"]["n1"])
+        pd_only = data["pd-dual-host-existing-deploy-only.json"]
+        self.assertEqual(pd_only["deployment"]["topology"], "pd")
+        self.assertEqual(pd_only["task"]["on_idle"], "keep_service")
+        self.assertEqual(len(pd_only["nodes"]), 2)
+        self.assertTrue(all("container" in node for node in pd_only["nodes"].values()))
+        self.assertIn("kv_transfer", pd_only["deployment"])
+        existing_perf = data["colocated-existing-deploy-eval-perf.json"]
+        self.assertEqual(existing_perf["deployment"]["topology"], "colocated")
+        self.assertIn("container", existing_perf["nodes"]["n1"])
+        self.assertIn("container", existing_perf["evaluation"]["tester"])
+        existing_acc = data["colocated-existing-deploy-eval-acc.json"]
+        self.assertEqual(existing_acc["task"]["eval_mode"], "acc")
+        self.assertEqual(existing_acc["evaluation"]["dataset"]["id"], "gpqa")
+        eval_only = data["eval-only-external-acc.json"]
+        self.assertEqual(eval_only["task"]["action"], "eval_only")
+        self.assertIn("container", eval_only["evaluation"]["tester"])
+        self.assertIn("container_work_root", eval_only["evaluation"]["tester"])
 
     def test_example_names_encode_scenario(self):
         for name, path in self.paths.items():
@@ -405,16 +355,16 @@ class TopInputExampleTest(unittest.TestCase):
                 if action == "deploy_and_eval":
                     self.assertIn("-deploy-eval-", name)
                     self.assertTrue(name.endswith("-" + task["eval_mode"] + ".json"), name)
-                    expected = ("colocated-" if data["deployment"]["topology"] == "colocated"
-                                else "pd-single-host-" if len(data["nodes"]) == 1
-                                else "pd-dual-host-")
-                    self.assertTrue(name.startswith(expected), name)
+                    self.assertTrue(name.startswith("colocated-"), name)
+                    mode = ("existing" if any("container" in node for node in data["nodes"].values())
+                            else "owned")
+                    self.assertIn("-" + mode + "-", name)
                 elif action == "deploy_only":
                     self.assertIn("-deploy-only.", name)
                 elif action == "eval_only":
                     self.assertIn("eval-only-", name)
                 else:
-                    self.assertTrue(name.startswith("release-only."), name)
+                    self.fail("unexpected action in example: " + action)
 
 
 

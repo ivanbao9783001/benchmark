@@ -93,6 +93,13 @@ def validate_eval_bindings(plan, bindings):
     for tester in bindings['testers'].values():
         for key in ('work_root', 'python', 'aisbench', 'model_path'):
             path(tester[key])
+        if 'container_work_root' in tester:
+            if 'container' not in tester:
+                raise ProtocolError('INVALID_INPUT: tester container work root without container')
+            path(tester['container_work_root'])
+            # Docker's copy grammar uses ':' as a source/destination separator.
+            if ':' in tester['container_work_root']:
+                raise ProtocolError('INVALID_INPUT: tester container work root')
         for dataset in tester['datasets'].values():
             if dataset['type'] == 'aisbench_synthetic':
                 continue

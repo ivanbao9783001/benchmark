@@ -58,6 +58,13 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "mode": {
+              "enum": [
+                "owned_container",
+                "existing_container"
+              ],
+              "description": "owned_container creates and removes a task container. existing_container borrows an operator-provided container bound per node; it is never created, started or removed."
+            },
             "image": {
               "type": "string",
               "minLength": 1
@@ -111,9 +118,64 @@
               ]
             }
           },
-          "required": [
-            "image",
-            "container"
+          "allOf": [
+            {
+              "if": {
+                "anyOf": [
+                  {
+                    "not": {
+                      "required": [
+                        "mode"
+                      ]
+                    }
+                  },
+                  {
+                    "properties": {
+                      "mode": {
+                        "const": "owned_container"
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ]
+                  }
+                ]
+              },
+              "then": {
+                "required": [
+                  "image",
+                  "container"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "mode": {
+                    "const": "existing_container"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              },
+              "then": {
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "image"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "container"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
           ]
         },
         "instances": {

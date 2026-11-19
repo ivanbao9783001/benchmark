@@ -3,9 +3,13 @@
 Semantics migrated from baseline aisbench_cli.validate_native_result at commit
 74a7feffb76c32b23658d37ea681784b3a9b2474; frozen helper remains unchanged.
 """
+import ast
 import json
 import hashlib
 import math
+import re
+import sqlite3
+import struct
 from pathlib import Path
 from .durable import atomic_json
 from .json_io import load_json,unique_object,reject_constant
@@ -14,10 +18,92 @@ from .protocol import ProtocolError
 
 LINE_LIMIT=1024*1024
 GROUP_LIMIT=128
+NPY_MAGIC=b'\x93NUMPY'
+NPY_DTYPES={'<f8':('d',8),'=f8':('d',8),'|f8':('d',8),'<f4':('f',4),'=f4':('f',4),'|f4':('f',4)}
+DB_NAME=re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}')
+
+
+def interval(start,end):
+    return (type(start) in (int,float) and type(end) in (int,float) and
+            math.isfinite(start) and math.isfinite(end) and end>start)
+
+
+def npy_values(blob,limit=8192):
+    """Read a one-dimensional little-endian float array without numpy."""
+    if not isinstance(blob,(bytes,bytearray)) or len(blob)<10 or bytes(blob[:6])!=NPY_MAGIC:
+        return None
+    major=blob[6]
+    if major==1:
+        header_size=int.from_bytes(blob[8:10],'little'); offset=10
+    elif major in (2,3):
+        if len(blob)<12:
+            return None
+        header_size=int.from_bytes(blob[8:12],'little'); offset=12
+    else:
+        return None
+    if header_size<=0 or header_size>4096 or len(blob)<offset+header_size:
+        return None
+    try:
+        meta=ast.literal_eval(bytes(blob[offset:offset+header_size]).decode('latin1'))
+    except (ValueError,SyntaxError,UnicodeDecodeError):
+        return None
+    if not isinstance(meta,dict) or meta.get('fortran_order') is not False:
+        return None
+    descr=meta.get('descr'); shape=meta.get('shape')
+    if descr not in NPY_DTYPES or not isinstance(shape,tuple) or len(shape)!=1:
+        return None
+    count=shape[0]
+    if type(count) is not int or not 1<=count<=limit:
+        return None
+    code,size=NPY_DTYPES[descr]
+    data=bytes(blob[offset+header_size:])
+    if len(data)!=count*size:
+        return None
+    return struct.unpack('<'+str(count)+code,data)
+
+
+def db_interval(row,parent,root):
+    """Resolve AISBench's time_points db reference into start/end seconds.
+
+    Unknown or absent timing evidence stays unavailable; only unsafe
+    references are rejected as invalid input.
+    """
+    points=row.get('time_points')
+    if isinstance(points,(list,tuple)):
+        if len(points)>=2 and all(type(value) in (int,float) and math.isfinite(value) for value in points):
+            return points[0],points[-1]
+        return None,None
+    if not isinstance(points,dict) or set(points)!={'__db_ref__'}:
+        return None,None
+    reference=points['__db_ref__'];name=row.get('db_name')
+    if type(reference) is not int or reference<=0 or not isinstance(name,str):
+        return None,None
+    if not DB_NAME.fullmatch(name):
+        raise ProtocolError('INVALID_INPUT: native timing reference')
+    path=parent/'db_data'/name
+    if path.is_symlink() or not path.resolve().is_relative_to(root):
+        raise ProtocolError('INVALID_INPUT: native timing reference')
+    if not path.is_file():
+        return None,None
+    store=None
+    try:
+        store=sqlite3.connect('file:'+str(path)+'?mode=ro',uri=True)
+        store.execute('PRAGMA query_only=ON')
+        found=store.execute('select arr_blob from numpy_store where id=? limit 1',
+                            (reference,)).fetchone()
+    except sqlite3.Error:
+        return None,None
+    finally:
+        if store is not None:
+            store.close()
+    values=npy_values(found[0]) if found else None
+    if values is None or len(values)<2:
+        return None,None
+    return values[0],values[-1]
 
 
 def validate_native_result(folder,case,*,deadline=None,cancelled=None):
-    folder=Path(folder)
+    folder=Path(folder);root=folder.resolve()
     def check():
         if deadline is not None:
             remaining(deadline)
@@ -70,8 +156,11 @@ def validate_native_result(folder,case,*,deadline=None,cancelled=None):
                     raise ProtocolError('INVALID_INPUT: failed, duplicate or malformed native request') from error
                 seen.add(identifier)
                 start,end=row.get('start_time'),row.get('end_time')
-                if (type(start) in (int,float) and type(end) in (int,float) and
-                        math.isfinite(start) and math.isfinite(end) and end>start):
+                if not interval(start,end):
+                    # AISBench stores per-request time_points in a sibling SQLite
+                    # numpy store instead of inline start/end fields.
+                    start,end=db_interval(row,path.parent,root)
+                if interval(start,end):
                     timing_count+=1;max_latency=max(max_latency,end-start)
                     if timings is not None:
                         if len(timings)<100000:

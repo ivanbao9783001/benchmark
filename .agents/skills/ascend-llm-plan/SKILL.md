@@ -17,13 +17,13 @@ description: 为 Deploy and Eval v2 整理部署或独立测试需求、现场�
 
 独立测试仅要求端点、served model、测试机/工具/数据绑定及权限；外部部署摘要未知就记录未知，不补造健康或部署来源。
 
-默认值在审阅中展示：普通 formal_requests=concurrency×4，steady_state=true 时×10；显式数值优先。内嵌 deploy plan 的 `evaluation` 必须显式写出该值（CLI 拒绝待推导字段），独立 eval 任务可省略由代码推导。保留预热、输出长度、请求速率及缓存策略，禁止为缩短验证降载，也禁止为观察更多数据放大负载（提高并发、加长输出、增加请求数或延长稳态窗口）；负载只来自模板默认值与显式授权值。清缓存是独立授权，端点可访问不表示允许清缓存。
+审阅中必须展示 case 的最终负载与 `formal_requests`；推导规则（`concurrency×4`、稳态 `×10`）、内嵌 evaluation 必须显式写值、独立 eval 可省略，均以 [模板索引](references/templates.md) 为唯一来源，本文件不重述。保留预热、输出长度、请求速率及缓存策略，禁止为缩短验证降载，也禁止为观察更多数据放大负载（提高并发、加长输出、增加请求数或延长稳态窗口）；负载只来自模板默认值与显式授权值。清缓存是独立授权，端点可访问不表示允许清缓存；external_eval 的 `prepare-inputs` 固定 `reset_cache=false`。
 
 端到端可建议 idle_timeout_seconds=900 后释放自有服务；用户要求保留则保留，不把建议当已授权。交接包含计划及绑定位置、摘要、未解决项、下一阶段及授权范围。存在 unresolved 时不进入真实执行。
 
 ## 本阶段参考与交付
 
-依赖 CLI >=0.1.0a7、协议 1.0。规划时读取 [计划与绑定](references/plan-contract.md)、[审阅摘要](references/review-summary.md)；参考脚本迁移见 [部署映射](references/deployment-migration.md)，完整字段由 `export-contracts` 从已安装 CLI 导出；不维护技能内 Schema 副本。命令封装见已安装 ascend-llm-router 的 references/cli-contract.md。参数模板见 [模板索引](references/templates.md)：精度/性能 case、数据集绑定、容器运行时与双卡启动档片段；写请求前先取模板，不得手抄历史请求。取模板后替换全部 `{{...}}`，提交前对请求文件做全文搜索，`{{` 必须无匹配（bash：`grep -n "{{" <file>`；PowerShell：`Select-String -Path <file> -Pattern '\{\{'`）；残留占位符视为规划未完成。`top_input.deployment.instances[].args` 非空时按实例逐键合并进该实例启动档的 `launch.args`（PD 下 prefill 与 decode 各自独立），不覆盖 `tensor-parallel-size`、`program`、`env`、`placement`、`ports`、`checks`；差异按“模板默认值 → 采用值 → 依据”写入审阅摘要，标为用户显式值。
+依赖 CLI 0.1、协议 1.0，补丁版本以 `deploy-eval-v2 --version` 实际输出为准。规划时读取 [计划与绑定](references/plan-contract.md)、[审阅摘要](references/review-summary.md)；参考脚本迁移见 [部署映射](references/deployment-migration.md)，完整字段由 `export-contracts` 从已安装 CLI 导出；不维护技能内 Schema 副本。命令封装见已安装 ascend-llm-router 的 references/cli-contract.md。参数模板见 [模板索引](references/templates.md)：精度/性能 case、数据集绑定、容器运行时与双卡启动档片段；写请求前先取模板，不得手抄历史请求。取模板后替换全部 `{{...}}`，提交前对请求文件做全文搜索，`{{` 必须无匹配（bash：`grep -n "{{" <file>`；PowerShell：`Select-String -Path <file> -Pattern '\{\{'`）；残留占位符视为规划未完成。`top_input.deployment.instances[].args` 非空时按实例逐键合并进该实例启动档的 `launch.args`（PD 下 prefill 与 decode 各自独立），不覆盖 `tensor-parallel-size`、`program`、`env`、`placement`、`ports`、`checks`；差异按“模板默认值 → 采用值 → 依据”写入审阅摘要，标为用户显式值。
 
 按用户授权发现现场，生成 plan、bindings，执行 draft-review；消除 unresolved 并绑定实际授权证据后 freeze-inputs，再 check-ready。交付冻结目录、runtime_sha256、bundle_sha256、原始需求与差异映射，以及下一阶段所需控制端配置。control.json 是阶段产物而非独立输入入口：仅由 top_input.nodes 或用户授权的自然语言信息生成，不重新推导；生成后核对 `tasks` 键与 task_ref 一致、每个节点的 `host` 与授权机器一致、`root` 位于该节点 `allowed_root` 内且末段等于 `task.id`、`python` 实际存在。`nodes.<n>.python` 只用于框架侧；`evaluation.tester.python` 是 AISBench 侧，不得互相替代。候选 Python/镜像只是发现线索，缺失时允许只读寻找已有兼容候选；实际绑定必须有证据，不擅自安装或修改已有环境。
 

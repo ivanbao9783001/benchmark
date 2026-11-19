@@ -114,6 +114,11 @@ def _execute_attempt(compiled, nodes, execution, evidence_path, cancelled, *, he
                 ['npu:'+str(n) for n in groups[k]['npu_ids']]+['tcp:'+str(p) for p in groups[k]['ports']]})
             try:
                 if known:
+                    if getattr(node,'existing_container',False) is True:
+                        # Borrowed container: stop only this task's process groups.
+                        cleanup[name]=node.release_existing(command(name,'cleanup'),known,resources,
+                            evidence_path.parent/(name+'-cleanup.json'),keep_claims=uncertain)
+                        continue
                     if getattr(node,'remote',False) is True:
                         cleanup[name]=node.release_resources(command(name,'cleanup'),known,keep_claims=uncertain)
                         continue

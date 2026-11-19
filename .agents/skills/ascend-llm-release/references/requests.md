@@ -1,13 +1,13 @@
 # 阶段请求
 
-释放前先 `get-status` 取当前版本、活动 operation 与归属记录；`expected_version` 必须来自该响应。
+释放前先 `get-status` 取当前版本、活动 operation 与归属记录；`expected_version` 必须来自该响应。`service_id` 取部署产出的 `service.json` 原值，不按命名规则拼接。
 
 ## release
 
 ```json
 {
   "task_ref": "<deployment_task_id>",
-  "service_id": "svc-<deployment_task_id>",
+  "service_id": "<service.json 中的 service_id>",
   "request_id": "release-001",
   "expected_version": 2
 }

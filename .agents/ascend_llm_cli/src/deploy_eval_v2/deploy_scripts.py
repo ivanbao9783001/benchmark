@@ -45,6 +45,9 @@ def compile_service_scripts(compiled):
     """Return per-host scripts with hashes and explicit host/path artifact locations."""
     result = {}
     for group_id, group in compiled['groups'].items():
+        # Borrowed containers execute from their own root; owned groups are
+        # byte-identical to the previous contract (no extra keys).
+        container_root = group.get('container_root')
         scripts = []
         for command in group['commands']:
             name = command['name']
@@ -52,10 +55,14 @@ def compile_service_scripts(compiled):
                 raise ProtocolError('INVALID_INPUT: instance script name')
             for purpose, renderer in [('service', render_service_script), ('dependency', render_dependency_script)]:
                 path = group['root']+'/scripts/'+name+'.'+purpose+'.sh'
-                log = group['root']+'/logs/'+name+'.service.log'
+                log = (container_root or group['root'])+'/logs/'+name+'.service.log'
                 content = renderer(command, log)
-                scripts.append(dict(instance=name, purpose=purpose, host=group['host'], path=path,
-                                    log=dict(host=group['host'], path=log), content=content,
-                                    sha256=hashlib.sha256(content.encode('utf-8')).hexdigest()))
+                script = dict(instance=name, purpose=purpose, host=group['host'], path=path,
+                              log=dict(host=group['host'], path=log), content=content,
+                              sha256=hashlib.sha256(content.encode('utf-8')).hexdigest())
+                if container_root is not None:
+                    script['container_path'] = container_root+'/scripts/'+name+'.'+purpose+'.sh'
+                    script['transport_log'] = group['root']+'/logs/'+name+'.'+purpose+'.transport.log'
+                scripts.append(script)
         result[group_id] = scripts
     return result

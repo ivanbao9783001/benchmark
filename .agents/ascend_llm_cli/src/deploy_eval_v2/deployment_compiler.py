@@ -49,6 +49,7 @@ def compile_bound_deployment(plan, bindings):
     if bindings['task_id'] != plan['task_id']:
         raise ProtocolError('INVALID_INPUT: deployment task identity')
     deployment = copy.deepcopy(plan['deployment'])
+    existing = deployment['runtime'].get('mode', 'owned_container') == 'existing_container'
     selected = {}
     contexts = {}
     def linux_path(value):
@@ -66,10 +67,22 @@ def compile_bound_deployment(plan, bindings):
             for value in [binding['work_dir'], *binding['model_paths'].values(), *binding.get('paths', {}).values()]:
                 linux_path(value)
             root = str(PurePosixPath(binding['work_dir'])/plan['task_id'])
+            if existing:
+                if not isinstance(binding.get('container'), dict) or not binding.get('container_work_root'):
+                    raise ProtocolError('INVALID_INPUT: existing container binding')
+                linux_path(binding['container_work_root'])
+                # Docker's copy grammar uses ':' as a separator.
+                if ':' in binding['container_work_root']:
+                    raise ProtocolError('INVALID_INPUT: container work root')
+                container_root = str(PurePosixPath(binding['container_work_root'])/plan['task_id'])
+            else:
+                if 'container' in binding or 'container_work_root' in binding:
+                    raise ProtocolError('INVALID_INPUT: borrowed container binding in owned mode')
+                container_root = root
             context = dict(model={'path': binding['model_paths'][deployment['model']['id']],
                                   'served_name': deployment['model']['served_name']},
                            paths=binding.get('paths', {}), network=node['network'], ports=ports,
-                           task_dir=root, run_dir=root+'/logs/'+instance['id'])
+                           task_dir=container_root, run_dir=container_root+'/logs/'+instance['id'])
             contexts[instance['id']] = context
             launch = instance['launch']
             for field in ('args', 'env', 'kv_transfer_config'):
@@ -88,18 +101,25 @@ def compile_bound_deployment(plan, bindings):
             binding = bindings['nodes'][group['node']]
             group['host'] = binding['host']
             group['root'] = str(PurePosixPath(binding['work_dir'])/plan['task_id'])
-            group['mounts'] = resolve_mounts(binding)
-            model_path = binding['model_paths'][deployment['model']['id']]
-            for source in (group['root'], model_path):
-                matching = [m for m in group['mounts'] if m['target'] == source]
-                if matching and (matching[0]['source'] != source or
-                                 (source == group['root'] and matching[0].get('read_only'))):
-                    raise ProtocolError('INVALID_INPUT: task/model mount conflicts with binding')
-                if not matching:
-                    group['mounts'].append(dict(source=source, target=source, read_only=source == model_path))
-            group['container'] = {**DEFAULT_CONTAINER, 'devices': list(DEVICES),
-                                  **deployment['runtime']['container']}
-            group['image'] = deployment['runtime']['image']
+            if existing:
+                # The borrowed container is not created or mounted. Scripts and
+                # logs use its own writable root; publishable host state stays
+                # under the unchanged host task root.
+                group['container_root'] = str(PurePosixPath(binding['container_work_root'])/plan['task_id'])
+                group['mounts'] = []
+            else:
+                group['mounts'] = resolve_mounts(binding)
+                model_path = binding['model_paths'][deployment['model']['id']]
+                for source in (group['root'], model_path):
+                    matching = [m for m in group['mounts'] if m['target'] == source]
+                    if matching and (matching[0]['source'] != source or
+                                     (source == group['root'] and matching[0].get('read_only'))):
+                        raise ProtocolError('INVALID_INPUT: task/model mount conflicts with binding')
+                    if not matching:
+                        group['mounts'].append(dict(source=source, target=source, read_only=source == model_path))
+                group['container'] = {**DEFAULT_CONTAINER, 'devices': list(DEVICES),
+                                      **deployment['runtime']['container']}
+                group['image'] = deployment['runtime']['image']
             for mount in group['mounts']:
                 linux_path(mount['source']); linux_path(mount['target'])
             for command in group['commands']:

@@ -5,7 +5,8 @@
 deploy → eval → release（测试进程在主节点或显式绑定的远端测试机）。多节点模型部署
 已有执行路径，但首次验证应先完成单节点，再增加节点。
 
-参数必须保留用户原意，不得为上机修改。部署重试已按已确认失败、清理核验及共享期限实现；未知结果不重试。远端独立测试机需配置 tester 发布目标，行为见 remote-tester.md。缓存重置已接入，必须使用已授权的冻结逐实例目标，行为见 cache-reset.md。稳态/性能按实际证据判定；缺失时间戳、未知版本格式或路由/预热覆盖不足时返回 UNVERIFIED。测试同时核验执行、证据和资源生命周期。
+参数必须保留用户原意，不得为上机修改。部署重试已按已确认失败、清理核验及共享期限实现；未知结果不重试。远端独立测试机需配置 tester 发布目标，行为见 remote-tester.md。缓存重置仅对 owned 评测可用，必须使用已授权的冻结逐实例目标，行为见 cache-reset.md；
+`prepare-inputs(stage=eval)` 生成的 external_eval 固定 `reset_cache=false`，外部服务不承诺清缓存。稳态/性能按实际证据判定；缺失时间戳、未知版本格式或路由/预热覆盖不足时返回 UNVERIFIED。测试同时核验执行、证据和资源生命周期。
 
 ## 1. 安装与无模型检查
 
@@ -16,7 +17,7 @@ deploy → eval → release（测试进程在主节点或显式绑定的远端�
 
 ```powershell
 py -3.11 -m pip wheel --no-deps --wheel-dir dist .
-py -3.11 -m pip install dist/deploy_eval_v2-0.1.0a1-py3-none-any.whl
+py -3.11 -m pip install dist/deploy_eval_v2-<version>-py3-none-any.whl
 deploy-eval-v2 --version
 ```
 
@@ -61,8 +62,8 @@ deploy-eval-v2 --config control.json deploy --request deploy.json
 deploy-eval-v2 --config control.json wait-event --task-ref TASK --after-seq CURSOR --wait-ms 30000
 ```
 
-start.json 含 task_ref、两项摘要和一次生成并保存的 64 位十六进制 nonce。
-响应丢失后保留 nonce；不要用新 nonce 尝试绕过原身份。
+start.json 的字段见 deployment/references/requests.md，nonce 语义见 router 的 references/cli-contract.md；
+响应丢失后按原身份查询，不换 nonce 重试。
 阶段请求包含 task_ref、request_id、expected_version、wait_ms；deploy 另含
 plan_ref（bundle 摘要），eval 含 service_id/case_id，release 含 service_id。
 每次后继操作从 get-status 读取当前版本，禁止对旧事件盲发后继操作。

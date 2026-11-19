@@ -26,11 +26,11 @@
   "task_ref": "<task_id>",
   "runtime_sha256": "<package-runtime 返回值>",
   "bundle_sha256": "<freeze-inputs 返回值>",
-  "nonce": "<check-ready 或 publish-task 响应中的 nonce>"
+  "nonce": "<本任务生成的 64 位小写十六进制启动身份>"
 }
 ```
 
-`nonce` 只能取自前序响应；不能自造、不能复用旧任务的值。
+`nonce` 不是 CLI 返回值：用控制端 Python `secrets.token_hex(32)` 生成一次并保存，后续 stop-runtime 复用同一值；不能复用旧任务的值，也不能因为结果未知而换一个 nonce 重试（先按身份查询状态）。`start-task` 只拉起生命周期 server 并校验收据，不产生部署事件；成功后立即提交 `deploy`，不要用 `wait-event` 等部署。
 
 ## deploy
 

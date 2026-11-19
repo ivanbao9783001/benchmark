@@ -206,6 +206,29 @@
             "type": "string",
             "pattern": "^[a-f0-9]{32}$"
           },
+          "container": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "image"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "image": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              }
+            },
+            "description": "Borrowed existing container; only for runtime.mode=existing_container. Identity is verified before any effect and the container is never created, started or removed."
+          },
+          "container_work_root": {
+            "$ref": "#/$defs/path",
+            "description": "Container-internal writable root for task scripts and logs; only for runtime.mode=existing_container."
+          },
           "guard_root": {
             "type": "string",
             "pattern": "^/",
@@ -326,7 +349,16 @@
         },
         "host_python": {
           "$ref": "#/$defs/path"
+        },
+        "container_work_root": {
+          "$ref": "#/$defs/path",
+          "description": "Container-internal counterpart of work_root when the borrowed container does not expose the host work root at the same path; only valid together with container."
         }
+      },
+      "dependentRequired": {
+        "container_work_root": [
+          "container"
+        ]
       }
     },
     "dataset": {

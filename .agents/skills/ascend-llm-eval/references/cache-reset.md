@@ -3,12 +3,14 @@
 Semantics adapted independently from stable cache_reset.py at baseline
 74a7feffb76c32b23658d37ea681784b3a9b2474; no stable module is imported or changed.
 
-External plans must provide service.permissions.reset_cache=true and a nonempty
-service.reset_targets array of {id,url,metrics_url}. The two URLs must address
-the same instance origin. These reviewed targets are not inferred from a proxy.
-Owned evaluation derives per-instance targets from frozen topology metrics when
-the reviewed case explicitly requests reset_cache=true. Endpoint permission alone
-does not cause a reset when the selected case has reset_cache=false.
+Scope: owned evaluation only. `prepare-inputs(stage=eval)` builds external_eval
+plans with `permissions.reset_cache=false` and `case.reset_cache=false`; there is
+no supported path to clear caches for an external service, and the Agent must not
+promise, request or attempt it.
+
+For owned evaluation, per-instance targets are derived from frozen topology
+metrics when the reviewed case explicitly requests reset_cache=true. Endpoint
+permission alone does not cause a reset when the selected case has reset_cache=false.
 
 After health and benchmark preflight, before native warmups, every target must
 report finite zero num_requests_running and num_requests_waiting metrics.

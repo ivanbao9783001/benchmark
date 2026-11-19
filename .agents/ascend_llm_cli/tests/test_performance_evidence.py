@@ -1,9 +1,19 @@
 import json
+import sqlite3
+import struct
 from pathlib import Path
 import tempfile
 import unittest
 from deploy_eval_v2.native_results import validate_native_result
 from deploy_eval_v2.performance_evidence import summarize
+from deploy_eval_v2.protocol import ProtocolError
+
+
+def npy(values):
+    base="{'descr': '<f8', 'fortran_order': False, 'shape': (%d,), }"%len(values)
+    header=base+' '*((-(10+len(base)+1))%64)+'\n'
+    return (b'\x93NUMPY\x01\x00'+struct.pack('<H',len(header))+header.encode('latin1')+
+            struct.pack('<%dd'%len(values),*values))
 
 
 class PerformanceEvidenceTests(unittest.TestCase):
@@ -15,9 +25,22 @@ class PerformanceEvidenceTests(unittest.TestCase):
         rows=[]
         for i in range(20):
             row=dict(id=i,success=True,input_tokens=10,output_tokens=5)
-            if timing: row.update(start_time=i*.5,end_time=i*.5+.8)
+            if timing is True: row.update(start_time=i*.5,end_time=i*.5+.8)
+            if timing=='db': row.update(db_name='store.db',time_points={'__db_ref__':i+1})
             rows.append(json.dumps(row))
         path.write_text('\n'.join(rows))
+        if timing=='db':
+            db=path.parent/'db_data/store.db';db.parent.mkdir()
+            store=sqlite3.connect(db)
+            try:
+                store.execute('create table numpy_store (id integer primary key, arr_blob blob)')
+                for i in range(20):
+                    store.execute('insert into numpy_store values (?,?)',
+                                  (i+1,npy([i*.5,i*.5+.1,i*.5+.8])))
+                store.commit()
+            finally:
+                store.close()
+        self.last_path=path
         log=root/'outputs/run/logs/worker.log';log.parent.mkdir(parents=True);log.write_text('evidence')
         stage='stable' if steady else 'total'
         data={key:{stage:value} for key,value in {'Benchmark Duration':'8500 ms' if steady else '10300 ms','Total Requests':18 if steady else 20,
@@ -35,6 +58,22 @@ class PerformanceEvidenceTests(unittest.TestCase):
                 report=summarize(root,case,native)
                 self.assertEqual(report['status'],'VERIFIED')
                 self.assertEqual(native['request_groups'][0]['observed_tokens']['input_tokens']['total'],200)
+
+    def test_db_time_points_restore_steady_window(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root,_,_,_,case,native=self.fixture(folder,True,'db')
+            self.assertEqual(native['request_groups'][0]['timing_count'],20)
+            self.assertEqual(summarize(root,case,native)['status'],'VERIFIED')
+
+    def test_unsafe_db_reference_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.fixture(folder,False,'db')
+            path=self.last_path
+            rows=[json.loads(line) for line in path.read_text().splitlines()]
+            rows[0]['db_name']='../store.db'
+            path.write_text('\n'.join(json.dumps(row) for row in rows))
+            with self.assertRaises(ProtocolError):
+                validate_native_result(Path(folder),dict(formal_requests=20,concurrency=2,steady_state=False))
 
     def test_missing_timing_short_window_and_modified_details_are_unverified(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -8,6 +8,7 @@ from .launcher import validate_identity
 from .external_executor import ExternalExecutor
 from .owned_executor import OwnedExecutor
 from .docker_node import DockerNode
+from .existing_container_node import ExistingContainerNode
 from .ssh_node import SSHNode
 from .remote_guard import HostGuard,resolve_guard_root
 from .protocol import ProtocolError
@@ -45,6 +46,8 @@ def build_executor(root,identity,*,machine_id_reader=local_machine_id,guard_root
     if plan['intent']!='deploy':
         raise ProtocolError('INVALID_INPUT: executor intent')
     compiled=values['compiled.json']
+    existing_mode=(plan.get('deployment',{}).get('runtime',{})
+                   .get('mode','owned_container')=='existing_container')
     slots={g['node'] for g in compiled['topology']['groups'].values()}
     nodes={}
     local=[]
@@ -56,8 +59,12 @@ def build_executor(root,identity,*,machine_id_reader=local_machine_id,guard_root
             local.append(slot)
             if any(Path(g['root'])!=root for g in compiled['topology']['groups'].values() if g['node']==slot):
                 raise ProtocolError('INVALID_INPUT: local node root binding differs')
-            nodes[slot]=DockerNode(HostGuard(guard_root or resolve_guard_root(binding,str(root)),
-                                             plan['task_id'],identity['nonce']))
+            guard=HostGuard(guard_root or resolve_guard_root(binding,str(root)),
+                            plan['task_id'],identity['nonce'])
+            if existing_mode:
+                nodes[slot]=ExistingContainerNode(guard,binding.get('container'))
+            else:
+                nodes[slot]=DockerNode(guard)
         else:
             nodes[slot]=SSHNode(plan['task_id'],slot,compiled,identity['bundle_sha256'],
                                identity['runtime_sha256'],identity['nonce'],coordinator_root=root)

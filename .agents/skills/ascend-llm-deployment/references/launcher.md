@@ -1,4 +1,4 @@
-# Detached Python runtime (CLI 0.1.0a4)
+# Detached Python runtime
 
 start-task starts a Linux Python process with a new session, closed inherited descriptors, DEVNULL stdin and append-only logs under TASK/task.jsonl. No service manager is required. The runtime owns a task flock and Unix socket. Startup records nonce and identity before launch; a process receipt stores PID, /proc start ticks, boot ID and session. A live socket handshake must match the complete frozen identity and PID. Retrying the same nonce reconciles existing evidence and never blindly restarts an uncertain launch.
 
