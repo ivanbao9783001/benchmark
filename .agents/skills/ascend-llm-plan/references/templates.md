@@ -106,7 +106,7 @@
 }
 ```
 
-- `path` 必须替换为 POSIX 绝对路径，指向包含 `gpqa_diamond.csv` 的目录；该 CSV 须为全量 198 行。
+- `path` 必须替换为 POSIX 绝对路径，指向包含 `gpqa_diamond.csv` 的目录；该 CSV 须为全量 198 条记录（不含表头，按 CSV 记录计，不按物理行数计）。
 - 不支持 `test_range`、子集或改题；否则 accuracy 不可比。
 - 数据需提前下载到测试机，CLI 不自动拉取。
 

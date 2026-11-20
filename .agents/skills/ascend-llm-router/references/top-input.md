@@ -60,7 +60,7 @@ evaluation  → 在哪评测、评什么、哪些参数被覆盖
 | `task.action` | 需求 | 恒填 | `deploy_and_eval` / `deploy_only` / `eval_only` / `release_only` |
 | `task.eval_mode` | 需求 | action 含评测 | `perf` / `acc` |
 | `task.on_idle` | 需求 | 含部署的动作 | 对齐 CLI 的 `policy.on_idle`：`release_owned` / `keep_service`；`deploy_only` 只能是 `keep_service`；`eval_only`、`release_only` 禁用 |
-| `task.control_node` | 授权 | 恒填 | 运行 deploy-eval-v2、生成 `control.json` 的节点，必须是 `nodes` 的键；多节点时通过它向其余节点下发 |
+| `task.control_node` | 授权 | 恒填 | 承载任务根与 runtime、并在 `control.json` 中登记为 tasks 条目的节点，必须是 `nodes` 的键；多节点时通过它向其余节点下发。deploy-eval-v2 由控制工作站执行并经 SSH 指向该节点，不等同于“必须登录该节点跑 CLI” |
 | `nodes.<id>` | 授权 | 恒填 | 键名即 bindings 节点标识，`^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`；`eval_only` 时该节点即测试机 |
 | `nodes.<id>.host` | 授权 | 恒填 | SSH 目标 |
 | `nodes.<id>.allowed_root` | 授权 | 恒填 | 可写根；同时投影为 `control.json` 的 `allowed_root` 与 bindings 的 `work_dir` |
