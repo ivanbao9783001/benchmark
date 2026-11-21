@@ -13,12 +13,12 @@
 | `launch.program/adapter/preserve_reference/checks` | 按角色固定 |
 | `bindings.nodes.<n>.deployments[].network/ports` | `nodes.network` + `instances[].ports` + 派生 `hccl` |
 | `bindings.testers.<id>` | `evaluation.tester` 逐字段投影；同机缺省：`host`←`nodes[control_node].host`、`work_root`←`allowed_root`、`model_path`←`model_paths[model.id]`、`container`←`nodes[control_node].container`、`container_work_root`←`<container_work_root>/<task.id>-tester`、`host_python`←`/usr/bin/python3`。缺省只用于补齐，**补齐后的值必须显式写回 top_input**（校验不替你读缺省）；显式值优先于派生值；`container_work_root` 派生值按任务隔离，不复用固定目录 |
-| 容器网络模式与 NPU 可见性 | existing 非 self 用 `docker inspect` 的 `NetworkMode` 与 Devices；self 在容器内核对网络与 `/dev/davinciN`；host 模式才可直接复用宿主 IP，其余模式必须核验容器地址与 NPU 直通 |
+| 容器网络模式与 NPU 可见性 | existing 的 `self` 节点在容器内核对网络与 `/dev/davinciN`；其余 existing 节点经 SSH + `docker inspect` 核验 `NetworkMode` 与 Devices；owned 由 CLI 创建，不预检宿主 IP |
 | 任务目录 `root` | 约定为 `allowed_root/task.id`；CLI 不推导，必须在 `control.json` 的 tasks 条目与定位该任务的 `nodes` 条目中显式写入同一值 |
 | `policy.on_idle` | `task.on_idle` |
-| `control.json` 的 tasks 条目 | `nodes[control_node]` 的 `host` / `root` / `allowed_root` / `python`，并在其 `nodes` 下补齐其余节点的同名四项；控制节点带 `container.self` 时该条目加 `self: true` |
+| `control.json` 的 tasks 条目 | `nodes[control_node]` 的 `host` / `root` / `allowed_root` / `python`，并在其 `nodes` 下补齐其余节点的同名四项；existing 的控制节点必带 `container.self`，该条目加 `self: true` |
 | `control.json` 的 `tester` 目标 | `evaluation.tester` 的 host、`work_root/task.id`、`python`；键名固定为 `host` / `root` / `python` |
-| `bindings.nodes.<n>.machine_id` 与 `bindings.testers.<id>.machine_id` | 取 **CLI 实际执行位置**的 `/etc/machine-id`：`container.self=true` 取容器内值，其余 existing/owned 取宿主值；两者都是 check-ready 硬门槛，节点缺失返回 `NODE_MACHINE_ID_REQUIRED`。self 模式下节点与 tester 的 `machine_id` 必须同时等于容器内的值；读不到合法 32 位值时停止回报，不用宿主值代替 |
+| `bindings.nodes.<n>.machine_id` 与 `bindings.testers.<id>.machine_id` | 取 **CLI 实际执行位置**的 `/etc/machine-id`：existing 节点与容器内 tester 取容器内值（`self` 节点本地读取，其余节点经 docker exec）；owned 取宿主值；两者都是 check-ready 硬门槛，节点缺失返回 `NODE_MACHINE_ID_REQUIRED`。`self` 节点的节点与 tester 的 `machine_id` 必须同时等于容器内的值；读不到合法 32 位值时停止回报，不用宿主值代替 |
 | `bindings.nodes.<n>.work_dir` | `nodes.<n>.allowed_root` |
 | `deployment.runtime.mode` | 由 top_input 投影：任一节点有 `container` ⇒ `existing_container`，否则 `owned_container`；模式本身由派单事实与授权决定，见 top-input.md §0 |
 | `deployment.runtime` | owned：`{image, container}`；existing：只写 `{mode:"existing_container"}` |

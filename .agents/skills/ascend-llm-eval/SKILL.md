@@ -28,7 +28,7 @@ evaluation.completed 仅表示阶段结束。按结果决定下一 case 或收�
 独立 external_eval 的框架收尾：先核验 evaluation.completed、原生结果和被测服务仍健康，再确认 get-status 无活动 operation。当前CLI不允许直接停止EVALUATED runtime；如无需继续case，使用原评测task_ref和当前expected_version提交 `cancel`（scope=task，新的request_id），只终结本评测会话。external_eval契约不具备部署或服务释放权，此cancel不会停止被测服务。等 operation.cancelled 且 cleanup_status=VERIFIED 后，用原启动nonce调用stop-runtime；再核验外部服务仍健康，补收最终task.jsonl。此流程不是release服务，不需要也不得取得服务部署归属身份。若清理未知或仍有活动操作，报告并按原身份查询，不以手工kill或换任务掩盖未知状态。保留evaluation.completed成功结果；随后task会话终结的CANCELLED不等于性能请求被取消。
 
 ## 容器内测试工具
-AISBench 可位于宿主或已有运行容器。宿主未找到工具时，继续只读检查已有容器的工具、解释器、依赖、tokenizer和网络；不要要求用户重复提供可自行发现的绑定。
+AISBench 可位于宿主或已有运行容器。宿主未找到工具时，继续只读检查已有容器的工具、解释器、依赖、tokenizer和网络；不要要求用户重复提供可自行发现的绑定。服务节点为 `container.self=true` 且 tester 的 `machine_id` 等于本机时，测试工具就在当前容器内本地执行，不经过 SSH 或 `ContainerTester`；判定规则见 [remote-tester.md](references/remote-tester.md)。
 
 容器 tester 的字段、路径归属（`python`/`aisbench`/`model_path`/`environment`/`datasets` 属容器内，`host_python` 与 `control.json` 的 `python` 属宿主）以及 `container_work_root` 的适用条件（容器未把 `work_root` 暴露在同一路径时才需要）以 plan 的 [plan-contract.md](../ascend-llm-plan/references/plan-contract.md) 为唯一来源，本阶段不重述。
 

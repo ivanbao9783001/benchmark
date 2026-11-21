@@ -44,6 +44,22 @@ class SelfContainerNodeTests(unittest.TestCase):
             self.assertFalse(any('docker' in argv for argv in calls))
             self.assertTrue((Path(folder)/'container'/'scripts').is_dir())
 
+    def test_create_without_image_omits_image_id(self):
+        with tempfile.TemporaryDirectory() as folder:
+            marker = Path(folder)/'dockerenv'
+            marker.write_text('')
+            free = (0, b'\tNo process in device.\n', b'')
+            runner = Mock(side_effect=[free, free, (0, b'FREE\n', b'')])
+            guard = HostGuard(Path(folder)/'guard', 'task', 'a'*64)
+            node = SelfContainerNode(guard, dict(id=CID, self=True), runner)
+            group = dict(npu_ids=[6, 7], ports=[8022],
+                         root=str(Path(folder)/'task'),
+                         container_root=str(Path(folder)/'container'))
+            with patch('deploy_eval_v2.self_container_node.DOCKERENV', marker):
+                result = node.create('create-1', group, time.monotonic()+60, threading.Event())
+            self.assertNotIn('image_id', result)
+            self.assertEqual(set(result), {'container_id', 'name', 'resources'})
+
     def test_create_result_satisfies_the_owned_service_contract(self):
         with tempfile.TemporaryDirectory() as folder:
             marker = Path(folder)/'dockerenv'

@@ -94,8 +94,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "id",
-            "image"
+            "id"
           ],
           "properties": {
             "id": {

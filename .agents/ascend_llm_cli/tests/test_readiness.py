@@ -77,6 +77,8 @@ class ReadinessTests(unittest.TestCase):
             self.assertIn('TESTER_SELF_CONTAINER_MISMATCH',result['readiness']['blockers'])
             values['bindings.json']['testers']['tester']['container']['id']='c'*64
             self.assertEqual(check_ready(request,config)['readiness']['blockers'],[])
+            values['bindings.json']['testers']['tester']['container'].pop('image')
+            self.assertEqual(check_ready(request,config)['readiness']['blockers'],[])
 
     def test_offline_readiness_requires_attested_tester_and_reports_no_remote_validation(self):
         for attested in (False,True):

@@ -47,7 +47,7 @@ control.json 是受信控制端配置，固定位于任务根：tasks 下以 tas
 
 副作用请求公共字段：task_ref、request_id、expected_version、wait_ms（0—30000）；protocol_version 可省略，CLI 补为 1.0。deploy 加 plan_ref；eval 加 service_id、case_id；release 加 service_id；cancel 加 scope（task/operation）、operation_id。CLI 将 task_ref 映射为协议 task_id，kind 由子命令决定。业务配置放冻结 JSON，不扩展成零散 CLI 参数。
 
-使用 `export-contracts --request export.json`（内容为 `{"destination":"<root>/contracts"}`）导出当前安装包的 Schema，command.schema.json 位于导出目录；它是传输内部请求契约，不是 plan Schema；plan/bindings 的权威 Schema 与它同在导出目录（deploy-plan、deploy-bindings、external-eval-plan、eval-bindings）。Production plan_ref must match the frozen bundle digest.
+使用 `export-contracts --request export.json`（内容为 `{"destination":"<root>/contracts-001"}`）导出当前安装包的 Schema。`destination` 必须是不存在的新目录，由 CLI 创建；不要先 `mkdir`，否则返回 `REQUEST_CONFLICT: contract destination exists`。`command.schema.json` 位于导出目录；它是传输内部请求契约，不是 plan Schema；plan/bindings 的权威 Schema 与它同在导出目录（deploy-plan、deploy-bindings、external-eval-plan、eval-bindings）。Production plan_ref must match the frozen bundle digest.
 
 ## 事件与错误处理
 

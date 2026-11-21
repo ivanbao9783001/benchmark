@@ -17,6 +17,7 @@
 | `task.action` | `deploy_only` |
 | `task.on_idle` | `keep_service`（唯一合法值） |
 | `nodes.<id>.container` | 派单方给出的运行中容器 ID 与镜像摘要 |
+| `nodes.<id>.container.self` | `true`（单机唯一节点；表示当前就在该容器内） |
 | `nodes.<id>.container_work_root` | 容器内可写根 |
 | `nodes.<id>.network` | `{ip, interface}`，不得留空 |
 | `nodes.<id>.model_paths` | 模型 id → 容器内可见路径 |
@@ -34,7 +35,7 @@
 
 ## 证据
 
-- `docker inspect` 的容器 ID、镜像、`Running=true`、`NetworkMode`；容器内 NPU 可见性。
+- 容器内 `/.dockerenv`、`hostname`、`/dev/davinci*` 与 `npu-smi info`；不对自身容器做 SSH 或 `docker inspect`，ID/镜像仅格式核验并标 `UNVERIFIED`。
 - `deployment.ready` 事件与冒烟请求的原始响应。
 
 ## 常见错误

@@ -18,6 +18,8 @@ class ContainerTester:
     def __init__(self, tester, folder, deadline):
         self.tester, self.folder = tester, Path(folder)
         self.container = tester['container']['id']
+        if not tester['container'].get('image'):
+            raise ProtocolError('INVALID_INPUT: tester container image required')
         self.deadline = deadline
         self.host_root = Path(tester['work_root'])
         self.container_root = (Path(tester['container_work_root'])

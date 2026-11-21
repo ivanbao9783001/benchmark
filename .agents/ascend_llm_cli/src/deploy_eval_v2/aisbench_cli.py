@@ -207,6 +207,7 @@ def write_accuracy_config(spec, case, dataset, service, folder):
     config = folder/'aisbench-config.py'
     text = (
         'from mmengine.config import read_base\n'
+        'with read_base():\n    from ais_bench.benchmark.configs.summarizers.example import summarizer\n'
         'from ais_bench.benchmark.models import VLLMCustomAPIChat\n'
         'from ais_bench.benchmark.datasets import GPQADataset, GPQAEvaluator\n'
         'from ais_bench.benchmark.openicl.icl_prompt_template import PromptTemplate\n'

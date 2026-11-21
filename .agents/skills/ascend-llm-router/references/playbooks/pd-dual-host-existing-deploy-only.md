@@ -1,9 +1,9 @@
 # 双机 PD + 借用容器 + 只部署
 
-适用：`action=deploy_only`、`topology=pd`、两台机器、`runtime=existing_container`。服务部署成功后保留。
+适用：`action=deploy_only`、`topology=pd`、两台机器、`runtime=existing_container`。服务部署成功后保留。当前所在节点写 `container.self=true`，另一节点不写、经 SSH + docker 进入。
 示例：[pd-dual-host-existing-deploy-only.json](../examples/pd-dual-host-existing-deploy-only.json)
 
-单机 PD 不是“把 `nodes` 减到一台”就等价：proxy 与 prefill/decode 同机，`devices` 与 `ports` 必须互不重叠；本文件不提供单机 PD 示例，按 [contract.md](../top-input/contract.md) 组装。
+单机 PD 不是“把 `nodes` 减到一台”就等价：唯一节点同样写 `container.self=true` 并本地执行，proxy 与 prefill/decode 同机，`devices` 与 `ports` 必须互不重叠；本文件不提供单机 PD 示例，按 [contract.md](../top-input/contract.md) 组装。
 
 ## 读什么
 
@@ -19,6 +19,7 @@
 | --- | --- |
 | `task.action` / `task.on_idle` | `deploy_only` / `keep_service` |
 | `nodes.<id>.*`（每个节点） | `host`、`allowed_root`、`python`、`guard_root`、`model_paths`、`network`、`container`、`container_work_root`、`authorization` |
+| `nodes.<control-node>.container.self` | `true`；当前节点本地执行，另一节点经 SSH + docker |
 | `nodes.<proxy-node>.paths.proxy_program` | proxy 所在节点必须有 |
 | `deployment.kv_transfer.connector` | 两侧镜像都可用 |
 | `deployment.instances` | 至少 1 `prefill` + 1 `decode` + **恰好 1** `proxy`；`prefill`/`decode` 的 `ports` 为 `{http, kv}`，`proxy` 为 `{http}` |
@@ -37,7 +38,7 @@
 
 ## 证据
 
-- 两侧 `docker inspect` 与 NPU 可见性；`network.ip` 互通探测。
+- `self` 节点在容器内核对 `/.dockerenv`、NPU 可见性与网络；另一节点经 SSH + `docker inspect` 核对容器与 NPU 直通。
 - HCCL 基端口与 `launch.env.HCCL_IF_BASE_PORT` 一致。
 - `deployment.ready`、两侧实例健康、proxy 冒烟响应。
 
@@ -47,4 +48,5 @@
 - 两侧设备数不同，KV 并行签名不一致被 CLI 拒绝。
 - `kv` 端口缺失或与 `http` 重叠。
 - proxy 节点漏写 `paths.proxy_program`。
+- 双机两个节点都写 `self`，或都没写；existing 必须恰好一个。
 - 用单机 PD 的双实例假设设备足够，实际两台各自有限。

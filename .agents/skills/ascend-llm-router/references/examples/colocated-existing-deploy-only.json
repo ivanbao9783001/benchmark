@@ -21,7 +21,8 @@
       },
       "container": {
         "id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        "image": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        "image": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "self": true
       },
       "container_work_root": "/srv/containers/work",
       "authorization": {

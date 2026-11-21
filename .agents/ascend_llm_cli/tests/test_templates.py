@@ -136,7 +136,6 @@ EXAMPLE_NAMES = {
     "colocated-existing-deploy-only.json",
     "colocated-existing-deploy-eval-perf.json",
     "colocated-existing-deploy-eval-acc.json",
-    "colocated-existing-self-deploy-eval-acc.json",
     "colocated-owned-deploy-eval-acc.json",
     "pd-dual-host-existing-deploy-only.json",
     "eval-only-external-acc.json",
@@ -233,6 +232,8 @@ class TopInputExampleTest(unittest.TestCase):
         self.assertEqual(pd_only["task"]["on_idle"], "keep_service")
         self.assertEqual(len(pd_only["nodes"]), 2)
         self.assertTrue(all("container" in node for node in pd_only["nodes"].values()))
+        self.assertIs(pd_only["nodes"]["n1"]["container"]["self"], True)
+        self.assertNotIn("self", pd_only["nodes"]["n2"]["container"])
         self.assertIn("kv_transfer", pd_only["deployment"])
         existing_perf = data["colocated-existing-deploy-eval-perf.json"]
         self.assertEqual(existing_perf["deployment"]["topology"], "colocated")
@@ -241,13 +242,11 @@ class TopInputExampleTest(unittest.TestCase):
         existing_acc = data["colocated-existing-deploy-eval-acc.json"]
         self.assertEqual(existing_acc["task"]["eval_mode"], "acc")
         self.assertEqual(existing_acc["evaluation"]["dataset"]["id"], "gpqa")
+        self.assertIs(existing_acc["nodes"]["n1"]["container"]["self"], True)
         eval_only = data["eval-only-external-acc.json"]
         self.assertEqual(eval_only["task"]["action"], "eval_only")
         self.assertIn("container", eval_only["evaluation"]["tester"])
         self.assertIn("container_work_root", eval_only["evaluation"]["tester"])
-        self_ = data["colocated-existing-self-deploy-eval-acc.json"]
-        self.assertIs(self_["nodes"]["n1"]["container"]["self"], True)
-        self.assertEqual(self_["task"]["control_node"], "n1")
         owned = data["colocated-owned-deploy-eval-acc.json"]
         self.assertNotIn("container", owned["nodes"]["n1"])
         self.assertIn("image", owned["deployment"])
@@ -265,9 +264,7 @@ class TopInputExampleTest(unittest.TestCase):
                     mode = ("existing" if any("container" in node for node in data["nodes"].values())
                             else "owned")
                     self.assertIn("-" + mode + "-", name)
-                    is_self = any("self" in node["container"]
-                                  for node in data["nodes"].values() if "container" in node)
-                    self.assertEqual("-self-" in name, is_self, name)
+                    self.assertNotIn("-self-", name)
                 elif action == "deploy_only":
                     self.assertIn("-deploy-only.", name)
                 elif action == "eval_only":
@@ -313,8 +310,10 @@ class ScenarioRouteTest(unittest.TestCase):
                 else:
                     self.assertNotIn("deployment", example)
                     self.assertIsNone(item.get("runtime"))
+                self.assertNotIn("self", item, "self 是节点标记，不是场景属性")
                 has_self = any(node.get("container", {}).get("self") for node in example["nodes"].values())
-                self.assertEqual(item["self"], has_self)
+                if item.get("runtime") == "existing_container":
+                    self.assertTrue(has_self, "existing 场景必须有一个 self 节点")
                 self.assertEqual(validate_top_input(example)["scenario"], item["id"])
                 self.assertTrue(item["required_facts"])
                 self.assertTrue(item["cli"])
@@ -359,11 +358,13 @@ class ContainerModeFixtureTest(unittest.TestCase):
         for name, data in self.data.items():
             self_nodes = [node_id for node_id, node in data["nodes"].items()
                           if node.get("container", {}).get("self")]
-            if not self_nodes:
-                continue
+            existing = any("container" in node for node in data["nodes"].values())
             with self.subTest(example=name):
-                self.assertEqual(len(self_nodes), 1)
-                self.assertEqual(data["task"]["control_node"], self_nodes[0])
+                if existing:
+                    self.assertEqual(len(self_nodes), 1, "existing 必须恰好一个 self")
+                    self.assertEqual(data["task"]["control_node"], self_nodes[0])
+                else:
+                    self.assertEqual(self_nodes, [], "owned 不得有 self")
 
     def test_eval_examples_carry_complete_tester(self):
         for name, data in self.data.items():
@@ -424,7 +425,7 @@ class SkillFrontmatterTest(unittest.TestCase):
 
 class TopInputValidatorTest(unittest.TestCase):
     def setUp(self):
-        source = (EXAMPLES / "colocated-existing-self-deploy-eval-acc.json").read_text(encoding="utf-8")
+        source = (EXAMPLES / "colocated-existing-deploy-eval-acc.json").read_text(encoding="utf-8")
         self.example = json.loads(source)
 
     def codes(self, mutate):
@@ -436,6 +437,48 @@ class TopInputValidatorTest(unittest.TestCase):
         codes = self.codes(lambda data: data["task"].update(control_node="n2"))
         self.assertIn("CONTROL_NODE", codes)
         self.assertIn("SELF_CONTROL_NODE", codes)
+
+    def test_existing_requires_self_node(self):
+        codes = self.codes(lambda data: data["nodes"]["n1"]["container"].pop("self"))
+        self.assertIn("SELF_REQUIRED", codes)
+
+    def test_self_value_must_be_true(self):
+        codes = self.codes(lambda data: data["nodes"]["n1"]["container"].update(self=False))
+        self.assertIn("SELF_VALUE", codes)
+
+    def test_self_node_may_omit_image(self):
+        data = json.loads(json.dumps(self.example))
+        data["nodes"]["n1"]["container"].pop("image")
+        codes = {issue["code"] for issue in validate_top_input(data)["issues"]}
+        self.assertNotIn("CONTAINER_SHAPE", codes)
+        self.assertNotIn("CONTAINER_IMAGE", codes)
+
+    def test_non_self_node_must_keep_image(self):
+        def mutate(data):
+            data["nodes"]["n1"]["container"].pop("image")
+            data["nodes"]["n1"]["container"].pop("self")
+        self.assertIn("CONTAINER_SHAPE", self.codes(mutate))
+
+    def test_tester_container_may_omit_image(self):
+        data = json.loads(json.dumps(self.example))
+        data["evaluation"]["tester"]["container"].pop("image")
+        codes = {issue["code"] for issue in validate_top_input(data)["issues"]}
+        self.assertNotIn("TESTER_CONTAINER", codes)
+
+    def test_duplicate_self_node_is_rejected(self):
+        data = json.loads(json.dumps(self.example))
+        data["nodes"]["n1"]["container"]["self"] = True
+        data["nodes"]["n2"] = json.loads(json.dumps(data["nodes"]["n1"]))
+        data["nodes"]["n2"]["host"] = "example@192.0.2.39"
+        data["nodes"]["n2"]["container"]["self"] = True
+        data["nodes"]["n2"]["network"]["ip"] = "192.0.2.39"
+        codes = {issue["code"] for issue in validate_top_input(data)["issues"]}
+        self.assertIn("SELF_DUPLICATE", codes)
+
+    def test_scenario_id_does_not_encode_self(self):
+        report = validate_top_input(self.example)
+        self.assertEqual(report["scenario"], "colocated-existing-deploy-eval-acc")
+        self.assertNotIn("self", report["scenario"])
 
     def test_unknown_top_level_field_is_rejected(self):
         self.assertIn("UNKNOWN_FIELD", self.codes(lambda data: data.update(extra=1)))

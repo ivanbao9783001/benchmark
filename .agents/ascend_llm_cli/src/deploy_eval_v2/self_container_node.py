@@ -42,7 +42,7 @@ class SelfContainerNode(ExistingContainerNode):
             raise ProtocolError('INVALID_INPUT: existing container identity')
         self._require_inside()
         # The image digest in the reviewed binding cannot be re-derived here.
-        return dict(Id=cid, Image=self.container['image'], Running=True, ImageVerified=False)
+        return dict(Id=cid, Image=self.container.get('image'), Running=True, ImageVerified=False)
 
     def create(self, command_id, group, deadline, cancelled):
         """Claim local resources and verify the borrowed container; create nothing."""
@@ -66,10 +66,13 @@ class SelfContainerNode(ExistingContainerNode):
             # declaration stays unverified: record that gap as evidence instead
             # of exporting a field the service contract does not define.
             atomic_json(self.guard.root/'probes'/(digest([command_id, 'container'])+'.json'),
-                        dict(container_id=self.container['id'], image=self.container['image'],
+                        dict(container_id=self.container['id'], image=self.container.get('image'),
                              image_verified=False, dockerenv=DOCKERENV.exists()))
-            return dict(container_id=self.container['id'], image_id=self.container['image'],
-                        name=self.container['id'], resources=resources)
+            outcome = dict(container_id=self.container['id'],
+                           name=self.container['id'], resources=resources)
+            if self.container.get('image'):
+                outcome['image_id'] = self.container['image']
+            return outcome
         return self.guard.command(command_id, dict(kind='create', group=group), action)
 
     def start_container(self, command_id, cid, deadline, cancelled):

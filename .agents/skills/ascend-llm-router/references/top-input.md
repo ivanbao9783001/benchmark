@@ -2,23 +2,27 @@
 
 top_input 是任务的唯一入口：派单方一次性给出授权与目标，subagent 据此完成 plan → 部署 → 评测 → 释放。它不是 task.json，也不替代冻结产物；agent 仍须自行组装 plan、绑定现场并冻结。prompt 只负责启动并指向本文件，不承载授权与现场事实。
 
-## 0. 先判定环境模式（决定骨架，判错整单作废）
+## 0. 先判定运行时模式（决定骨架，判错整单作废）
 
-容器模式是授权与现场事实，不是风格选择。按顺序问，答不上就停：
+运行时只有两种：容器是否已存在、由谁管理，是授权与现场事实，不是风格选择。
 
 | # | 问题 | 是 | 否 |
 | --- | --- | --- | --- |
-| Q1 | 现场是否已有本次要用的运行中容器，且派单方给了容器 id 与镜像摘要？ | **existing**：每节点写 `container={id,image}`、`container_work_root`，`network` 必填 | 进入 Q2 |
+| Q1 | 现场是否已有本次要用的运行中容器，且容器 id 可确定（派单方给出，或 `self` 节点由执行方在容器内自证）？ | **existing**：每节点写 `container={id,image}`、`container_work_root`，`network` 必填；`self` 节点可省略 `image` | 进入 Q2 |
 | Q2 | 派单方是否明确授权 CLI 创建并在释放时删除容器？ | **owned**：不写 `container`，写 `deployment.image` | **停止**：不得自行创建，也不得伪造容器 |
-| Q3 | CLI 是否就在 Q1 那个容器内执行（存在 `/.dockerenv`、无法 inspect 自身、且是 `control_node`）？ | **self**：existing + 该节点 `container.self=true`，至多一个 | **existing**（外部经 SSH + docker exec） |
 
-- owned 与 existing 全节点一致，混用即拒绝；`owned + self` 不存在，self 只是 existing 的执行通道。
+existing 默认就在容器里，`container.self` 只用来标出“当前在哪个容器”，不是第三种模式：
+
+- **单机**：唯一节点写 `container.self=true`，直接本地执行；不对自己的容器做 SSH、`docker inspect` 或 `docker exec`。
+- **双机 PD**：只在当前所在的容器节点写 `container.self=true`；另一个节点不写，仍经 SSH + docker 进入。必须恰好一个 self，且是 `control_node`。
+- owned 没有 self；existing 全节点一致，不得与 owned 混用。
+- `self` 节点没有 docker，镜像 digest 无法自证，`container.image` 可省略；给出但无法核验时证据记 `UNVERIFIED`，不得编造。非 self 节点仍须给出 `sha256:` 摘要。
 - 现场有多个候选容器而派单方未指定时，停止回报，不按名称猜。
-- 三种模式的字段差异与生命周期见 [contract.md 容器模式](top-input/contract.md)。
+- 字段差异与生命周期见 [contract.md 容器模式](top-input/contract.md)。
 
 ## 1. 再判定任务形态
 
-`action` → `topology` → `eval_mode`，与容器模式正交：
+`action` → `topology` → `eval_mode`，与运行时模式正交；`self` 不参与任务形态判定：
 
 | 任务形态 | `action` | `topology` | `eval_mode` | 额外必填 |
 | --- | --- | --- | --- | --- |
@@ -32,22 +36,22 @@ top_input 是任务的唯一入口：派单方一次性给出授权与目标，s
 
 ## 2. 定位示例（已有示例的索引，不是支持范围）
 
-先定环境（§0）再定形态（§1），然后查下表。**表里没有的组合不等于不支持**：owned 的其余组合、单机 PD、self 的 perf 均无示例，按 [contract.md](top-input/contract.md) 组装，不得因缺示例改判环境模式。
+先定运行时模式（§0）再定形态（§1），然后查下表。**表里没有的组合不等于不支持**：owned 的其余组合、单机 PD、双机 PD 评测均无示例，按 [contract.md](top-input/contract.md) 组装，不得因缺示例改判运行时模式。
 
-| 任务形态 | owned | existing | self |
-| --- | --- | --- | --- |
-| 单机混部只部署 | 契约组装 | [示例](examples/colocated-existing-deploy-only.json) + [playbook](playbooks/colocated-existing-deploy-only.md) | 契约组装 |
-| 单机混部 + 评测 | [acc](examples/colocated-owned-deploy-eval-acc.json) + [playbook](playbooks/colocated-owned-deploy-eval-acc.md)；perf 按契约组装 | [perf](examples/colocated-existing-deploy-eval-perf.json) / [acc](examples/colocated-existing-deploy-eval-acc.json) + playbook | [acc](examples/colocated-existing-self-deploy-eval-acc.json) + [playbook](playbooks/colocated-existing-self-deploy-eval-acc.md)；perf 按契约组装 |
-| 单机 PD 只部署 / + 评测 | 契约组装 | 契约组装 | 契约组装 |
-| 双机 PD 只部署 | 契约组装 | [示例](examples/pd-dual-host-existing-deploy-only.json) + [playbook](playbooks/pd-dual-host-existing-deploy-only.md) | 契约组装 |
-| 双机 PD + 评测 | 契约组装 | 契约组装 | 契约组装 |
-| 外部服务只评测 | — | [示例](examples/eval-only-external-acc.json) + [playbook](playbooks/eval-only-external-acc.md) | — |
+| 任务形态 | owned | existing |
+| --- | --- | --- |
+| 单机混部只部署 | 契约组装 | [示例](examples/colocated-existing-deploy-only.json) + [playbook](playbooks/colocated-existing-deploy-only.md) |
+| 单机混部 + 评测 | [acc](examples/colocated-owned-deploy-eval-acc.json) + [playbook](playbooks/colocated-owned-deploy-eval-acc.md)；perf 按契约组装 | [perf](examples/colocated-existing-deploy-eval-perf.json) / [acc](examples/colocated-existing-deploy-eval-acc.json) + playbook |
+| 单机 PD 只部署 / + 评测 | 契约组装 | 契约组装 |
+| 双机 PD 只部署 | 契约组装 | [示例](examples/pd-dual-host-existing-deploy-only.json) + [playbook](playbooks/pd-dual-host-existing-deploy-only.md)（当前容器节点写 `self`） |
+| 双机 PD + 评测 | 契约组装 | 契约组装 |
+| 外部服务只评测 | — | [示例](examples/eval-only-external-acc.json) + [playbook](playbooks/eval-only-external-acc.md) |
 
-[scenarios.json](scenarios.json) 与上表同源，场景 id 与示例文件名一一对应；每个示例都必须能通过 `validate-top-input`。`release_only` 是对原部署任务的续接释放，复用原 `task.id`、交付根、runtime 与 nonce，不新建任务目录，不提供示例。
+existing 的 `self` 是节点标记，不是独立示例：单机示例即唯一节点，双机 PD 示例只标一个节点。`scenarios.json` 与上表同源，场景 id 与示例文件名一一对应，`self` 不进入场景 id；每个示例都必须能通过 `validate-top-input`。`release_only` 是对原部署任务的续接释放，复用原 `task.id`、交付根、runtime 与 nonce，不新建任务目录，不提供示例。
 
 ## 3. 读什么
 
-1. 用 §0 定环境模式，用 §1 定任务形态，用 §2 定位示例或确认需契约组装。
+1. 用 §0 定运行时模式，用 §1 定任务形态，用 §2 定位示例或确认需契约组装。
 2. 有 example/playbook 时只读这一份；没有时读 [contract.md](top-input/contract.md) 对应小节与 plan 模板，不读其他场景的 playbook。
 3. 以 example 为结构起点填写，字段含义按需查 contract.md 对应小节，不必通读。
 4. 填完后按 playbook 或契约生成 plan/bindings；派生规则见 [derivation.md](top-input/derivation.md)。

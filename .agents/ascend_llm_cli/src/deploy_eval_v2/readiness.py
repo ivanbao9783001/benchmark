@@ -102,7 +102,8 @@ def check_ready(request,config):
                 container=tester.get('container')
                 require(isinstance(container,dict)
                         and container.get('id')==local_node['container'].get('id')
-                        and container.get('image')==local_node['container'].get('image'),
+                        and ('image' not in container
+                             or container.get('image')==local_node['container'].get('image')),
                         'TESTER_SELF_CONTAINER_MISMATCH')
     else:
         require(False,'INTENT_UNSUPPORTED')

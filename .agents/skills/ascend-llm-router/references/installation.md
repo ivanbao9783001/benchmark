@@ -17,16 +17,18 @@ python -c "import jsonschema; print(jsonschema.__version__)"
 优先使用随包提供的 wheel；没有 wheel 时从与 `skills/` 平级的 `ascend_llm_cli` 源码安装。
 
 ```bash
-# 源码安装（在 ascend_llm_cli 目录执行）
-python -m pip install .
+# 源码安装（在 ascend_llm_cli 目录执行；Python 需 >=3.11）
+python3 -m pip install --no-build-isolation .
 
 # 或安装 wheel
-python -m pip install dist/deploy_eval_v2-<version>-py3-none-any.whl
+python3 -m pip install dist/deploy_eval_v2-<version>-py3-none-any.whl
 ```
 
-Windows 用 `py -3.11 -m pip install ...`；Linux 用 `python3.11 -m pip install ...`。装完必须复验第 1 节的两条命令。
+Windows 用 `py -3 -m pip install --no-build-isolation .`；Linux 用 `python3 -m pip install --no-build-isolation .`。`python3` 只要 >=3.11 即可，3.12 不需要额外的 `python3.11`。`--no-build-isolation` 用于离线环境：默认隔离构建会尝试下载 `setuptools` 等构建依赖而失败；若目标机可联网，也可不加。装完必须复验第 1 节的两条命令。
 
-安装失败（无 Python 3.11、无 pip/权限、找不到源码或 wheel、依赖不可达）时，一次性报告缺失项并停止；不得改用其他 CLI、脚本或手工 `docker` 代替。
+源码安装会在 `ascend_llm_cli/` 下生成 `build/` 与 `src/*.egg-info/`，这是构建产物，不是对技能或源码的修改；这些路径已列入 `.gitignore`，需要保持目录整洁时可删除。
+
+安装失败（无 Python >=3.11、无 pip/权限、找不到源码或 wheel、依赖不可达）时，一次性报告缺失项并停止；不得改用其他 CLI、脚本或手工 `docker` 代替。
 
 ## 3. 安装五个技能（一次性）
 

@@ -11,24 +11,24 @@
 | `task.action` | 需求 | 恒填 | `deploy_and_eval` / `deploy_only` / `eval_only` / `release_only` |
 | `task.eval_mode` | 需求 | action 含评测 | `perf` / `acc` |
 | `task.on_idle` | 需求 | 含部署的动作 | 对齐 CLI 的 `policy.on_idle`：`release_owned` / `keep_service`；`deploy_only` 只能是 `keep_service`；`eval_only`、`release_only` 禁用 |
-| `task.control_node` | 授权 | 恒填 | 承载任务根与 runtime、并在 `control.json` 中登记为 tasks 条目的节点，必须是 `nodes` 的键；多节点时通过它向其余节点下发。deploy-eval-v2 由控制工作站执行并经 SSH 指向该节点，不等同于“必须登录该节点跑 CLI” |
+| `task.control_node` | 授权 | 恒填 | 承载任务根与 runtime、并在 `control.json` 中登记为 tasks 条目的节点，必须是 `nodes` 的键；多节点时通过它向其余节点下发。existing 时该节点就是 `container.self=true` 的所在容器（单机即唯一节点，双机 PD 即当前容器），CLI 本地执行；owned 时 CLI 在工作站经 SSH 指向该节点宿主并创建容器 |
 
 ## nodes
 
 | 字段 | 级别 | 必填条件 | 说明 |
 | --- | --- | --- | --- |
 | `nodes.<id>` | 授权 | 恒填 | 键名即 bindings 节点标识，`^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`；`eval_only` 时该节点即测试机 |
-| `nodes.<id>.host` | 授权 | 恒填 | SSH 目标 |
+| `nodes.<id>.host` | 授权 | 恒填 | SSH 目标；`container.self=true` 的节点只作登记，不走 SSH |
 | `nodes.<id>.allowed_root` | 授权 | 恒填 | 可写根；同时投影为 `control.json` 的 `allowed_root` 与 bindings 的 `work_dir` |
 | `nodes.<id>.python` | 授权 | 含部署的动作 | 该节点发布/启动用解释器；缺省 `/usr/bin/python3`。必须能用它成功 `from jsonschema import Draft202012Validator`（jsonschema>=4），否则远端 runtime 无法启动；不满足时改用现场已核验的 venv。远端运维通道固定用 `/usr/bin/python3`，不可替换 |
 | `nodes.<id>.guard_root` | 事实 | 含部署的动作 | 每节点独立；投影为 bindings 的 `guard_root`；`eval_only`/`release_only` 不使用 |
 | `nodes.<id>.model_paths` | 事实 | 含部署的动作 | 模型 id → 该节点路径；**按节点**给，PD 两侧可以不同；existing 模式下填容器内可见路径 |
 | `nodes.<id>.network` | 事实 | `existing_container` 必填；PD 跨机两侧须互通 | `{ip, interface}`；existing 模式下 HCCL 与监听地址依赖它，不得留 `null` 现场猜；owned 下未给才现场探测并留证（PD 同样适用） |
 | `nodes.<id>.paths` | 事实 | proxy 所在节点必填 | 供 bindings 的 `paths`；proxy 节点必须有 `proxy_program` |
-| `nodes.<id>.container` | 事实 | 借用已有容器时必填 | `{id, image}`：运行中的容器完整 64 位 ID 与 `sha256:` 镜像摘要；只有 `existing_container` 使用。`NetworkMode`、NPU 可见性由 `docker inspect` 核验，不另设字段 |
-| `nodes.<id>.container.self` | 授权 | 控制端就在该容器内时必填 | 只能写 `true`：该节点既是 `task.control_node`，又与控制进程处于**同一个**借用容器。控制→runtime 改走本地执行，runtime→容器改走本地进程/文件，不再经 SSH 与 docker。最多一个节点、只能 `existing_container`；`id`/`image` 仍必填但镜像无法核验，证据记 `UNVERIFIED` |
+| `nodes.<id>.container` | 事实 | 借用已有容器时必填 | `{id, image}`，当前所在容器再加 `self: true`：运行中的容器完整 64 位 ID；`image` 为 `sha256:` 镜像摘要，`self=true` 时可省略（容器内无 docker，无法核验）；只有 `existing_container` 使用。`NetworkMode`、NPU 可见性：`self` 节点本地核对，其余节点由 `docker inspect` 核验，不另设字段 |
+| `nodes.<id>.container.self` | 授权 | `existing_container` 必填 | 只能写 `true`：标记控制进程当前所在的容器。该节点必须是 `task.control_node`，全任务恰好一个（单机即唯一节点，双机 PD 即当前所在节点）。该节点与控制进程同容器，本地执行，不经 SSH 与 docker；其余 existing 节点仍经 SSH + docker。`id` 必须自证；`image` 可省略，给出但无法核验时证据记 `UNVERIFIED` |
 | `nodes.<id>.container_work_root` | 事实 | 借用已有容器时必填 | 容器内可写根，POSIX 绝对路径且不含 `:`；脚本与日志位于 `<container_work_root>/<task.id>` |
-| `nodes.<id>.authorization` | 授权 | 含部署的动作 | `{preempt_other_processes, create_work_root}`，按主机生效。**不是 CLI 字段**：CLI 无同名参数，它只授权 agent 的现场动作（是否可结束他人在跑的进程、是否可创建可写根），不进入 plan/bindings |
+| `nodes.<id>.authorization` | 授权 | 含部署的动作 | `{preempt_other_processes, create_work_root}`，按主机生效。**不是 CLI 字段**：CLI 无同名参数，它只授权 agent 的现场动作（是否可结束他人在跑的进程、是否可创建可写根），不进入 plan/bindings。派单给出 `deliverables.local_dir` 即视为允许创建 `local_dir/<task.id>` 及其任务子目录；仍不得创建授权外的根 |
 
 ## deployment
 
@@ -48,7 +48,7 @@
 
 | 字段 | 级别 | 必填条件 | 说明 |
 | --- | --- | --- | --- |
-| `evaluation.tester` | 需求 | action 含评测 | `{host, work_root, python, aisbench, model_path, machine_id, host_python, datasets}`，与 bindings 的 testers 同形；`machine_id` 虽是可选 schema 字段，但 check-ready 会硬性拒绝缺失值，必须现场取证（`/etc/machine-id`）；`environment` 为可选的环境变量映射，作用于 preflight、AISBench 与 postflight 子进程；容器内测试再加 `container={id,image}` 与 `container_work_root`。同机测试的缺省值可先按派生表补齐，但补齐结果必须显式写回 top_input：`host`/`work_root`/`python`/`aisbench`/`model_path`/`datasets` 任一缺失都会被 `validate-top-input` 拒绝；测试在容器内时 `container` 与 `container_work_root` 也必须显式写出（同机也一样），给出 `container` 而未给 `container_work_root` 即拒绝 |
+| `evaluation.tester` | 需求 | action 含评测 | `{host, work_root, python, aisbench, model_path, machine_id, host_python, datasets}`，与 bindings 的 testers 同形；`machine_id` 虽是可选 schema 字段，但 check-ready 会硬性拒绝缺失值，必须现场取证（`/etc/machine-id`）；`environment` 为可选的环境变量映射，作用于 preflight、AISBench 与 postflight 子进程；容器内测试再加 `container={id,image?}` 与 `container_work_root`；`self` 节点可省略 `image`，非 self 节点仍须给出摘要。同机测试的缺省值可先按派生表补齐，但补齐结果必须显式写回 top_input：`host`/`work_root`/`python`/`aisbench`/`model_path`/`datasets` 任一缺失都会被 `validate-top-input` 拒绝；测试在容器内时 `container` 与 `container_work_root` 也必须显式写出（同机也一样），给出 `container` 而未给 `container_work_root` 即拒绝 |
 | `evaluation.dataset` | 需求 | `eval_mode=acc` | `{id, split, scope}`；`perf` 省略，不写 `null` |
 | `evaluation.service` | 需求 | `action=eval_only` | `{service_id?, endpoint, model, health_path?}`；key 名是 `service_id`，写 `id` 会被静默忽略。省略时由 CLI 按 endpoint+model 派生；其余 action 禁用 |
 | `evaluation.params` | 覆盖 | 可选 | **不是 CLI 字段**：`prepare-inputs` 不读取它，agent 必须把这些覆盖物化进 `cases[]`（键名须为该 case 已声明字段），并在审阅摘要中标为用户显式值 |
@@ -89,14 +89,15 @@ PD 的连接由 agent 派生，不在 top_input 表达：`kv_transfer` 覆盖所
 | 模式 | top_input 形态 | plan | bindings | 生命周期 |
 | --- | --- | --- | --- | --- |
 | `owned_container` | 不写 `container`；`deployment.image` 可填镜像摘要 | `runtime={image, container}` | 写 `mounts`；不写 `container` | CLI 创建、启动并在释放时删除容器 |
-| `existing_container` | 每节点写 `container={id, image}` 与 `container_work_root`；`network` 必填 | `runtime={"mode":"existing_container"}`，不写 `image`/`container` | 只写 `container` 与 `container_work_root`，不写 `mounts` | 只 inspect/cp/exec；不创建、不启动、不停止、不删除容器 |
-| `existing_container` + `container.self` | 同上，且控制节点额外写 `container.self=true` | 同上 | 同上 | 同上；控制端与执行端是同一容器，本地进程替代 SSH 与 docker exec |
+| `existing_container` | 每节点写 `container={id, image}` 与 `container_work_root`；`network` 必填；其中当前所在节点写 `container.self=true` | `runtime={"mode":"existing_container"}`，不写 `image`/`container` | 只写 `container` 与 `container_work_root`，不写 `mounts` | 只 inspect/cp/exec；不创建、不启动、不停止、不删除容器；`self` 节点本地执行，不对自身容器做 SSH/docker |
 
-借用容器由派单方给出（`nodes.<id>.container`），不得自行创建替代容器。若派单方未给容器而现场存在多个候选，停止并向派单方回报，不按名称猜测。existing 模式下 `model_paths`、`paths`、`network` 等仍按容器内可见性填写；脚本与日志位于 `<container_work_root>/<task.id>`，宿主任务目录只保留状态与可回传产物。工作根目录可能已存在，按 `task.id` 子目录隔离，不复用或读取其他任务内容。
+`existing_container` 必须恰好一个 `container.self=true`，且该节点是 `task.control_node`：单机时就是唯一节点，双机 PD 时就是当前所在的容器。其余节点不写 `self`，仍经 SSH + docker 进入。
 
-控制端与执行端落在同一容器时（例如 CLI 直接在 `docker exec` 里执行），该节点加 `container.self=true`：`control.json` 的 tasks 条目同置 `self=true`，其余节点不变。`self` 只描述控制节点自身，必须是 `control_node` 且至多一个；不存在“同机不同容器”的 self 形态，其余节点仍按 existing 经 SSH 与 docker exec。runtime 会用 `/.dockerenv` 自证在容器内，缺失即失败；镜像摘要无法复核，证据标 `UNVERIFIED`。
+借用容器由派单方给出（`nodes.<id>.container`），不得自行创建替代容器。existing 默认就在容器内；若派单方未给容器而现场存在多个候选，停止并向派单方回报，不按名称猜测。existing 模式下 `model_paths`、`paths`、`network` 等仍按容器内可见性填写；脚本与日志位于 `<container_work_root>/<task.id>`，宿主任务目录只保留状态与可回传产物。工作根目录可能已存在，按 `task.id` 子目录隔离，不复用或读取其他任务内容。
 
-`container.self=true` 时 CLI 与控制进程都在该容器内，因此 `nodes.<id>.allowed_root`、`nodes.<id>.guard_root`、`nodes.<id>.container_work_root`、`deliverables.local_dir` 以及由 `allowed_root/task.id` 派生的节点 `root` 一律按**容器内路径**填写，`evaluation.tester.work_root` 与 `allowed_root` 保持一致。宿主路径与容器内路径不同时填宿主路径，会在 `check-ready` 的本地 root 绑定比对处失败。`machine_id` 取容器内 `/etc/machine-id`，不是宿主值。
+existing 中 `container.self` 只描述当前所在容器，不是“同机不同容器”的独立形态：该节点与控制进程同容器，控制→runtime 与 runtime→容器都走本地；其余节点不变，仍按 existing 经 SSH 与 docker exec。runtime 会用 `/.dockerenv` 自证在容器内，缺失即失败；镜像摘要无法复核，证据标 `UNVERIFIED`。
+
+`container.self` 节点的 `allowed_root`、`guard_root`、`container_work_root`、`deliverables.local_dir` 以及由 `allowed_root/task.id` 派生的节点 `root` 一律按**容器内路径**填写，`evaluation.tester.work_root` 与 `allowed_root` 保持一致。宿主路径与容器内路径不同时填宿主路径，会在 `check-ready` 的本地 root 绑定比对处失败。existing 的节点与容器内 tester 的 `machine_id` 取容器内 `/etc/machine-id`，不是宿主值；owned 取宿主值。
 
 ## 任务目录
 

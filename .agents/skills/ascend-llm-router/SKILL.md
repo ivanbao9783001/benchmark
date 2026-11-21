@@ -26,20 +26,13 @@ RUNNING 按游标等待；WAIT_TIMEOUT 不代表失败。结果未知时恢复�
 ## 输入契约
 入口只有两种：机器派单直接提交 top_input；自然语言派单由当前 Agent 归一化为同等内容的 top_input，并一次性确认授权字段。两者共用 [派单契约](references/top-input.md)。
 
-### 派单方视角（上层主 Agent）
+### 执行前的输入核对
 
-当用户要求“把任务交给 subagent / 派单 / 起一个执行 agent”时，你是派单方，不是执行方。先向用户收齐四类信息，缺一项就停：
+拿到 top_input 后先核对运行时模式与任务形态，再核对字段。派单方（上层主 Agent 或人）如何收齐事实、如何发 prompt，见 [dispatch-kit/README.md](../../dispatch-kit/README.md)；执行方不替派单方补事实，也不把示例值当授权。判不出容器归属时停止并报告缺口，不自行创建容器。
 
-1. **环境结论**：`existing`（每节点容器 id、image、`container_work_root`、`network`）、`owned`（明确创建授权 + `deployment.image`）或 `self`（existing 且 CLI 在容器内执行）。
-2. **任务形态**：`action`、`topology`、`eval_mode`、`on_idle`。
-3. **现场事实**：`host`、`allowed_root`、`guard_root`、`python`、`model_paths`、`devices`、`network`/`ports`、`tester`（含 `machine_id` 与 `datasets`）；PD 另加 `kv_transfer.connector` 与 proxy 的 `paths.proxy_program`。
-4. **授权与护栏**：`preempt_other_processes`、`create_work_root`、`control_node`、`deliverables.local_dir`、`constraints`。
+**先定运行时模式（owned / existing），再定任务形态（action / topology / eval_mode）。** `container.self` 只是 existing 的节点标记（当前所在容器），不是第三种模式；单机 existing 直接在容器内本地执行，双机 PD 只有当前节点写 `self`，另一节点经 SSH + docker。两个判定问题、必填差异与停止规则见派单契约 §0；判不出容器归属就停，不自行创建容器，也不得把 owned 硬套成 existing。`scenarios.json` 只是已有示例的索引，不是支持范围的全部；没有示例的路由按派单契约 §2 与字段契约组装，不得因为找不到示例而改判运行时模式。
 
-取值要求见 [dispatch-kit/README.md](../../dispatch-kit/README.md)，可复制的 prompt 见 [prompt.md](../../dispatch-kit/prompt.md)。不要替 subagent 写 plan/bindings，不要把示例值当授权，不要附带历史任务产物。
-
-**先定环境模式（owned / existing / self），再定任务形态（action / topology / eval_mode）。** 三个判定问题、各自的必填差异与停止规则见派单契约 §0；判不出容器归属就停，不自行创建容器，也不得把 owned 硬套成 existing。`scenarios.json` 只是已有示例的索引，不是支持范围的全部；没有示例的路由按派单契约 §2 与字段契约组装，不得因为找不到示例而改判环境模式。
-
-提交前用 `validate-top-input` 核对必填字段，缺失时一次性列出全部缺口向用户澄清，不进入 plan。`control.json` 是阶段产物，不作为独立入口。节点投影、`task.id` 与 `root` 派生、事实值只核验不重选、示例只示范结构等规则，以 [派单契约](references/top-input.md)、[字段契约](references/top-input/contract.md) 与 [派生表](references/top-input/derivation.md) 为准，本文件不重述。
+提交前用 `validate-top-input` 核对必填字段，缺失时一次性列出全部缺口并交回派单方，不进入 plan。`control.json` 是阶段产物，不作为独立入口。节点投影、`task.id` 与 `root` 派生、事实值只核验不重选、示例只示范结构等规则，以 [派单契约](references/top-input.md)、[字段契约](references/top-input/contract.md) 与 [派生表](references/top-input/derivation.md) 为准，本文件不重述。
 
 ## 阶段边界驱动的技能加载
 

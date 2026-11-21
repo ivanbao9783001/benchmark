@@ -126,6 +126,8 @@ class AccuracyContractTests(unittest.TestCase):
             self.assertIn("path='/data/gpqa'", text)
             self.assertIn('GPQAEvaluator', text)
             self.assertIn('first_option_postprocess', text)
+            self.assertIn('with read_base():', text)
+            self.assertIn('from ais_bench.benchmark.configs.summarizers.example import summarizer', text)
             self.assertIn('max_out_len=512', text)
             self.assertIn('batch_size=8', text)
             self.assertNotIn('test_range', text)

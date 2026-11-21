@@ -10,11 +10,10 @@
 
 派单方必须在 prompt 或 top_input 里**直接写出结论**，不要让接单方从示例反推：
 
-- `existing`：现场已有运行中的目标容器。给每节点 `container.id`（完整 64 位）、`container.image`（`sha256:` 摘要）、`container_work_root`、`network{ip,interface}`。
+- `existing`：现场已有运行中的目标容器。给每节点 `container.id`（完整 64 位）、`container.image`（`sha256:` 摘要，`self` 节点可省略）、`container_work_root`、`network{ip,interface}`；并在当前所在容器的节点写 `container.self=true`。单机时唯一节点即 self，直接本地执行；双机 PD 只有当前节点写 self，另一节点经 SSH + docker。
 - `owned`：明确授权 CLI 创建并在释放时删除容器。不写 `container`，给一个部署共用的 `deployment.image`（`sha256:` 摘要）。
-- `self`：`existing` 且 CLI 就在该容器内执行。额外声明该节点是 `control_node` 且 `container.self=true`；路径与 `machine_id` 都按容器内给。
 
-两者都没有 → 不发单，先补容器或创建授权。`owned` 与 `existing` 全节点一致，不得混用；`owned + self` 不存在。
+`self` 不是第三种模式，只是 existing 的节点标记：恰好一个，且必须是 `control_node`。两者都没有 → 不发单，先补容器或创建授权。`owned` 与 `existing` 全节点一致，不得混用；`owned` 不写 `container`，也就没有 self。
 
 ## 第二步：再给任务形态
 
@@ -30,7 +29,7 @@
 
 | 类别 | 必须给 | 不能省的原因 |
 | --- | --- | --- |
-| 环境 | 模式结论；existing 给容器 id / image / `container_work_root` / `network`，owned 给 `deployment.image` 与创建授权 | 决定骨架，判错整单作废 |
+| 环境 | 模式结论；existing 给容器 id / image（`self` 可省略 image）/ `container_work_root` / `network`，owned 给 `deployment.image` 与创建授权 | 决定骨架，判错整单作废 |
 | 目标 | `action`、`topology`、`eval_mode`、`on_idle` | 决定命令链与是否释放 |
 | 机器 | 节点 id、`host`、`allowed_root`、`python`、`guard_root` | 授权边界，不得扩大 |
 | 现场动作 | `preempt_other_processes`、`create_work_root` | 结束他人进程或建目录需要明确许可 |
@@ -39,7 +38,7 @@
 | 评测 | `tester` 全套（含 `machine_id`、`datasets`）、`dataset`（acc）；`eval_only` 另给 `evaluation.service` | `machine_id` 与路径必须现场取证 |
 | 交付与护栏 | `control_node`、`deliverables.local_dir`、`constraints` | 任务根与不可越界项 |
 
-值必须可核验：容器 id 为完整 64 位、镜像为 `sha256:` 摘要、`machine_id` 来自 `/etc/machine-id`。缺失的当场一次性列全，不要边做边补，也不要拿示例值顶替。
+值必须可核验：容器 id 为完整 64 位；镜像若不是 `self` 节点须为 `sha256:` 摘要，`self` 节点可省略并由执行方记 `UNVERIFIED`；`machine_id` 来自 `/etc/machine-id`。缺失的当场一次性列全，不要边做边补，也不要拿示例值顶替。
 
 ## 第四步：校验
 

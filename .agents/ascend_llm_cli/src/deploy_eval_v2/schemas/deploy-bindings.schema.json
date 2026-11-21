@@ -209,9 +209,23 @@
           "container": {
             "type": "object",
             "additionalProperties": false,
+            "if": {
+              "properties": {
+                "self": {
+                  "const": true
+                }
+              },
+              "required": [
+                "self"
+              ]
+            },
+            "else": {
+              "required": [
+                "image"
+              ]
+            },
             "required": [
-              "id",
-              "image"
+              "id"
             ],
             "properties": {
               "id": {
@@ -337,8 +351,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "id",
-            "image"
+            "id"
           ],
           "properties": {
             "id": {

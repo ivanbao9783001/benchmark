@@ -48,8 +48,6 @@ def scenario_id(data):
     if topology == "pd":
         parts.append("dual-host" if len(nodes) > 1 else "single-host")
     parts.append("existing" if any(isinstance(item, dict) for item in containers) else "owned")
-    if any(isinstance(item, dict) and item.get("self") is True for item in containers):
-        parts.append("self")
     parts.append("deploy-only" if action == "deploy_only" else "deploy-eval")
     if action == "deploy_and_eval" and task.get("eval_mode"):
         parts.append(task["eval_mode"])
@@ -98,6 +96,7 @@ def validate(data):
     if not isinstance(control, str) or control not in nodes:
         _issue(issues, "CONTROL_NODE", "task.control_node", "必须是 nodes 的键")
     self_nodes = []
+    has_existing = False
     for node_id, node in nodes.items():
         base = "nodes." + str(node_id)
         if not isinstance(node_id, str) or not NODE_ID.match(node_id):
@@ -132,13 +131,18 @@ def validate(data):
                 _issue(issues, "CONTAINER_MODE", base + ".container_work_root",
                        "owned 模式不允许 container_work_root")
             continue
-        if not isinstance(container, dict) or not {"id", "image"} <= set(container) <= {"id", "image", "self"}:
+        has_existing = True
+        is_self = isinstance(container, dict) and container.get("self") is True
+        required = {"id"} if is_self else {"id", "image"}
+        if (not isinstance(container, dict)
+                or not required <= set(container) <= {"id", "image", "self"}):
             _issue(issues, "CONTAINER_SHAPE", base + ".container",
-                   "必须且只能有 id、image、可选 self")
+                   "self 节点必须且只能有 id、可选 image、self；其它节点必须且只能有 id、image、可选 self")
             continue
         if not isinstance(container.get("id"), str) or not CONTAINER_ID.fullmatch(container["id"]):
             _issue(issues, "CONTAINER_ID", base + ".container.id", "必须是 64 位小写十六进制")
-        if not isinstance(container.get("image"), str) or not IMAGE_DIGEST.fullmatch(container["image"]):
+        if "image" in container and (not isinstance(container.get("image"), str)
+                                     or not IMAGE_DIGEST.fullmatch(container["image"])):
             _issue(issues, "CONTAINER_IMAGE", base + ".container.image", "必须是 sha256: + 64 位小写十六进制")
         work_root = node.get("container_work_root")
         if not _path(work_root):
@@ -154,7 +158,10 @@ def validate(data):
                 _issue(issues, "SELF_CONTROL_NODE", base + ".container.self", "只有控制节点可以 self")
             self_nodes.append(node_id)
     if len(self_nodes) > 1:
-        _issue(issues, "SELF_DUPLICATE", "nodes", "全任务至多一个 container.self")
+        _issue(issues, "SELF_DUPLICATE", "nodes", "全任务必须恰好一个 container.self")
+    elif has_existing and not self_nodes:
+        _issue(issues, "SELF_REQUIRED", "nodes",
+               "existing 模式必须有一个 container.self=true 表示当前所在容器")
 
     hosts = [node.get("host", "").split("@")[-1] for node in nodes.values() if isinstance(node, dict)]
     if len(hosts) != len(set(hosts)):
@@ -330,12 +337,13 @@ def _validate_evaluation(data, task, nodes, issues):
         datasets = {}
     container = tester.get("container")
     if container is not None:
-        if not isinstance(container, dict) or set(container) != {"id", "image"}:
-            _issue(issues, "TESTER_CONTAINER", "evaluation.tester.container", "必须且只能有 id、image")
+        if (not isinstance(container, dict)
+                or not {"id"} <= set(container) <= {"id", "image"}):
+            _issue(issues, "TESTER_CONTAINER", "evaluation.tester.container", "必须包含 id，可选 image")
         else:
             if not CONTAINER_ID.fullmatch(str(container.get("id", ""))):
                 _issue(issues, "TESTER_CONTAINER", "evaluation.tester.container.id", "必须是 64 位小写十六进制")
-            if not IMAGE_DIGEST.fullmatch(str(container.get("image", ""))):
+            if "image" in container and not IMAGE_DIGEST.fullmatch(str(container.get("image", ""))):
                 _issue(issues, "TESTER_CONTAINER", "evaluation.tester.container.image", "必须是镜像摘要")
         if not _path(tester.get("container_work_root")):
             _issue(issues, "TESTER_WORK_ROOT", "evaluation.tester.container_work_root", "必须是 POSIX 绝对路径")

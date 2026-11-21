@@ -106,11 +106,15 @@ class ExistingContainerNode(DockerNode):
             super().__init__(guard)
         else:
             super().__init__(guard, runner)
+        is_self = isinstance(container, dict) and container.get('self') is True
         if (not isinstance(container, dict) or
                 not re.fullmatch('[a-f0-9]{64}', str(container.get('id', ''))) or
-                not re.fullmatch('sha256:[a-f0-9]{64}', str(container.get('image', '')))):
+                (not is_self and
+                 not re.fullmatch('sha256:[a-f0-9]{64}', str(container.get('image', ''))))):
             raise ProtocolError('INVALID_INPUT: existing container identity')
-        self.container = dict(id=container['id'], image=container['image'])
+        self.container = dict(id=container['id'])
+        if container.get('image'):
+            self.container['image'] = container['image']
 
     def inspect_running(self, cid, deadline, cancelled):
         """Verify immutable identity, expected image and running state."""

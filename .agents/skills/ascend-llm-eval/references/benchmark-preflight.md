@@ -17,6 +17,9 @@ For `mode=acc`, the data check binds the task whitelist (`gpqa_gen_0_shot_str`),
 imports `GPQADataset`, `GPQAEvaluator` and `first_option_postprocess`, and counts
 `gpqa_diamond.csv` with `csv.reader`; only exactly 198 data rows pass. Quoted
 newlines make physical line counts meaningless, and there is no subset mode.
+Both modes declare `summarizer` inside `with read_base():`; AISBench 3.1 builds
+that enforce it reject a custom config that omits the parameter, and the top-level
+import form is dropped when AISBench re-dumps the runtime config.
 
 Only a successful child exit plus VERIFIED preflight.json permits AISBench to
 start. Failures preserve preflight.log and use the normal stage failure/cleanup

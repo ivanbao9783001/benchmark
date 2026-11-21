@@ -48,6 +48,6 @@ proxy实例不占设备。launch.proxy_program_key指向nodes[slot].paths中的�
 | --served-model-name | deployment.model.served_name，须保留参考实际名称 |
 | --kv-transfer-config | instance.launch.kv_transfer_config，保留完整JSON |
 
-以上四个键在launch.args中出现即拒绝冻结。data-parallel-rpc-port/data-parallel-address可以省略，由rpc绑定生成；若显式保留则必须与绑定一致。device-ids或ASCEND_RT_VISIBLE_DEVICES/ASCEND_VISIBLE_DEVICES如果参考显式给出，需要与placement.devices一致；否则编译器按placement补设备选择，不改DP/TP/PCP规模。preserve_reference会保留其余环境及参数，不取消上述结构化字段的一致性管理。
+以上四个键在launch.args中出现即拒绝冻结。data-parallel-rpc-port/data-parallel-address可以省略，由rpc绑定生成；若显式保留则必须与绑定一致。device-ids或ASCEND_RT_VISIBLE_DEVICES/ASCEND_VISIBLE_DEVICES如果参考显式给出，需要与placement.devices一致；否则编译器按placement补设备选择，不改DP/TP/PCP规模。容器基线环境里的 `ASCEND_RT_VISIBLE_DEVICES` 不是本次授权：与 `placement.devices` 不一致时，以派单授权为准，并在本次 launch 环境中覆盖，不得复用基线值。preserve_reference会保留其余环境及参数，不取消上述结构化字段的一致性管理。
 
 完整KV JSON中的kv_port必须匹配本实例ports.kv，kv_role和connector必须匹配connections.kv_transfer；engine_id在launch.engine_id与完整KV JSON之间必须保留一致，且遵循参考。不要将JSON参数同时放在launch.args和专用launch.kv_transfer_config中。所有受管理参数迁移都需在审阅差异中记录原参考值、目标字段和值及编译结果。
