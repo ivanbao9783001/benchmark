@@ -1,4 +1,5 @@
 """Offline readiness checks. Never connect to hosts or start workloads."""
+import os
 import re
 import shutil
 import tempfile
@@ -8,6 +9,27 @@ from .publication import install_archive
 from .publication_cli import task_binding,publication_targets
 from .protocol import ProtocolError,envelope
 from .remote_guard import resolve_guard_root
+
+
+def local_machine_id():
+    """The control station's identity; a self container must report it too."""
+    if os.name!='posix':
+        return None
+    try:
+        value=Path('/etc/machine-id').read_text(encoding='ascii').strip()
+    except (OSError,UnicodeError):
+        return None
+    return value if re.fullmatch('[a-f0-9]{32}',value) else None
+
+
+def control_is_posix():
+    return os.name=='posix'
+
+
+def self_container_nodes(bound,slots):
+    return [slot for slot in slots
+            if isinstance(bound['nodes'][slot].get('container'),dict) and
+            bound['nodes'][slot]['container'].get('self') is True]
 
 
 def check_ready(request,config):
@@ -27,7 +49,8 @@ def check_ready(request,config):
     def require(condition,code):
         if not condition and code not in blockers:
             blockers.append(code)
-    require(shutil.which('ssh') is not None,'CONTROL_SSH_MISSING')
+    remote=[target for _,target in targets if target.get('self') is not True]
+    require(shutil.which('ssh') is not None or not remote,'CONTROL_SSH_MISSING')
     for _,target in targets:
         python=target.get('python','/usr/bin/python3')
         require(isinstance(python,str) and python.startswith('/'),'ABSOLUTE_REMOTE_PYTHON_REQUIRED')
@@ -57,10 +80,30 @@ def check_ready(request,config):
                                    next(g['root'] for g in groups.values() if g['node']==slot))
             except ProtocolError:
                 require(False,'GUARD_ROOT_INVALID')
+        self_slots=self_container_nodes(bound,slots)
+        if self_slots or binding.get('self') is True:
+            existing=(plan['deployment'].get('runtime',{}).get('mode','owned_container')=='existing_container')
+            require(existing,'SELF_CONTAINER_REQUIRES_EXISTING')
+            require(len(self_slots)==1,'SELF_NODE_COUNT')
+            require(len(self_slots)==1 and set(self_slots)==local,'SELF_NODE_MUST_BE_CONTROL')
+            require(binding.get('self') is True,'CONTROL_ENTRY_SELF_REQUIRED')
+            require(control_is_posix(),'SELF_CONTROL_REQUIRES_POSIX')
+            if control_is_posix() and len(self_slots)==1:
+                require(local_machine_id()==machine(bound['nodes'][self_slots[0]]),'SELF_MACHINE_ID_MISMATCH')
         evaluation=plan.get('evaluation')
         if evaluation:
             tester=bound['testers'][evaluation['test_binding']]
             require(machine(tester) is not None,'TESTER_MACHINE_ID_REQUIRED')
+            if self_slots and machine(tester)==machine(bound['nodes'][self_slots[0]]):
+                # Evaluations on the control machine run inside the control
+                # container: docker is absent there, so the tester identity must
+                # designate that same container.
+                local_node=bound['nodes'][self_slots[0]]
+                container=tester.get('container')
+                require(isinstance(container,dict)
+                        and container.get('id')==local_node['container'].get('id')
+                        and container.get('image')==local_node['container'].get('image'),
+                        'TESTER_SELF_CONTAINER_MISMATCH')
     else:
         require(False,'INTENT_UNSUPPORTED')
     result=envelope(task,0,'ERROR' if blockers else 'EVENTS')

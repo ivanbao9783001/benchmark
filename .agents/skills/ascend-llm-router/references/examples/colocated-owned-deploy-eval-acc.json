@@ -1,0 +1,85 @@
+{
+  "schema_version": "top-input/2",
+  "task": {
+    "id": "case-owned-acc-01",
+    "action": "deploy_and_eval",
+    "eval_mode": "acc",
+    "on_idle": "release_owned",
+    "control_node": "n1"
+  },
+  "nodes": {
+    "n1": {
+      "host": "example@192.0.2.11",
+      "allowed_root": "/srv/work",
+      "python": "/srv/venvs/deploy-eval/bin/python",
+      "guard_root": "/srv/guard",
+      "model_paths": {
+        "qwen3-8b": "/models/Qwen3-8B"
+      },
+      "network": {
+        "ip": "192.0.2.11",
+        "interface": "eth0"
+      },
+      "authorization": {
+        "preempt_other_processes": false,
+        "create_work_root": true
+      }
+    }
+  },
+  "deployment": {
+    "id": "case-owned-acc-01",
+    "topology": "colocated",
+    "image": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "model": {
+      "id": "qwen3-8b",
+      "served_name": "qwen3-8b"
+    },
+    "instances": [
+      {
+        "id": "srv",
+        "role": "mixed",
+        "node": "n1",
+        "devices": [6, 7],
+        "ports": {
+          "http": 8021
+        }
+      }
+    ],
+    "endpoint": {
+      "instance": "srv",
+      "port": "http"
+    }
+  },
+  "evaluation": {
+    "tester": {
+      "host": "example@192.0.2.11",
+      "work_root": "/srv/work",
+      "python": "/srv/venvs/aisbench/bin/python",
+      "aisbench": "/srv/venvs/aisbench/bin/ais_bench",
+      "model_path": "/models/Qwen3-8B",
+      "machine_id": "0123456789abcdef0123456789abcdef",
+      "host_python": "/usr/bin/python3",
+      "datasets": {
+        "gpqa": {
+          "type": "aisbench_task",
+          "task": "gpqa_gen_0_shot_str",
+          "path": "/datasets/gpqa"
+        }
+      }
+    },
+    "dataset": {
+      "id": "gpqa",
+      "split": "diamond",
+      "scope": "full"
+    }
+  },
+  "deliverables": {
+    "local_dir": "/srv/work/deliverables"
+  },
+  "constraints": [
+    "不修改 .agents/ 下的技能与 CLI 源码",
+    "容器生命周期由 CLI 按 owned 模式创建与删除，不手工 docker run/rm",
+    "不读取历史任务目录、归档或回收站",
+    "阶段流程只用 deploy-eval-v2 CLI"
+  ]
+}

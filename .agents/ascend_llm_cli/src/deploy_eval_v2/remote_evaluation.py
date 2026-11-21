@@ -18,7 +18,8 @@ class RemoteEvaluation:
         self.transport=transport
         self.coordinator_root=coordinator_root
 
-    def __call__(self,plan,bindings,case_id,folder,cancelled,*,verified_local_host):
+    def __call__(self,plan,bindings,case_id,folder,cancelled,*,verified_local_host,
+                 verified_local_container=None):
         result=None
         try:
             result=self._execute(plan,bindings,case_id,folder,cancelled,verified_local_host=verified_local_host)

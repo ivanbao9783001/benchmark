@@ -5,7 +5,7 @@ description: 昇腾模型部署、性能测试及资源释放的任务入口；�
 
 # Ascend LLM Router
 
-依赖 deploy-eval-v2 CLI 0.1、协议 1.0；具体补丁版本以 `deploy-eval-v2 --version` 的实际输出为准，不在文档中固定。先运行 `deploy-eval-v2 --version`。五个技能平级安装；缺少依赖时报告，不隐式切换到历史 ascend-llm-deploy-eval。
+依赖 deploy-eval-v2 CLI 0.1、协议 1.0；具体补丁版本以 `deploy-eval-v2 --version` 的实际输出为准，不在文档中固定。进入任务前先按 [安装与前置](references/installation.md) 检查 `--version`；未安装时先安装并复验，安装失败才停止报告。五个技能平级安装，不切换到其他实现。
 
 | 用户意图 | 阶段 |
 | --- | --- |
@@ -17,14 +17,29 @@ description: 昇腾模型部署、性能测试及资源释放的任务入口；�
 
 由当前 Agent 加载下一技能，不递归调用技能或自行启动协调 Agent。已有授权持续有效。阶段交接保留 task_ref、request_id、operation_id、next_cursor、输入摘要、service/case 身份及证据引用。
 
-收到 deployment.ready 后核对健康及冒烟证据；仅部署任务交付 service.json 并保留服务，只有用户要求评测时才进入 eval；evaluation.completed 后按冻结策略进入下一 case 或 release。RUNNING 按游标等待；WAIT_TIMEOUT 不代表失败。结果未知时恢复查询，不更换请求身份盲重跑。具体参数、预检和清理规则由对应阶段技能负责。
+RUNNING 按游标等待；WAIT_TIMEOUT 不代表失败。结果未知时恢复查询，不更换请求身份盲重跑。具体参数、预检、保留与清理规则由对应阶段技能负责，本文件不重复。
 
 共享命令格式和返回语义见 [CLI 契约](references/cli-contract.md)。阶段请求模板由各阶段技能的 references/requests.md 提供，plan 参数模板见 ascend-llm-plan 的 references/templates.md。仅在用户要求无模型验收时读取 [Linux socket 验证](references/socket-validation.md)。最终分别报告执行、证据完整性、性能有效性和清理状态，不把模拟结果当实机性能。
 
 从第一条现场/CLI命令开始保存命令、原始stdout/stderr和实际退出码。每次调用使用唯一文件名（序号+阶段+attempt），失败调用的输出不得被后续同名文件覆盖。PowerShell Start-Transcript可能漏记原生命令stdout，不能只凭transcript存在宣称响应完整；把CLI JSON直接保存为独立文件并核对可解析性。阶段身份、游标、技能加载与下一CLI调用同步写检查点。停止runtime前归集日志；新CLI支持停止后的read-result只读回收，但不能把未回收完整的日志标为完整。
 
 ## 输入契约
-入口只有两种：机器派单使用 top_input，见 [派单契约](references/top-input.md)。已填示例是起点，未覆盖的场景以 top-input 的场景矩阵为准，不再提供占位符骨架；示例在 references/examples，文件名即 `<拓扑>-<容器模式>-<动作>-<评测模式>`（`eval-only` 例外）：`colocated-existing-deploy-eval-perf`（借用已有容器 + 容器内测试端 + 性能）、`colocated-existing-deploy-eval-acc`（借用已有容器 + 容器内测试端 + 精度）、`colocated-existing-deploy-only`（借用已有容器，只部署保留）、`pd-dual-host-existing-deploy-only`（双机 PD，只部署保留）、`eval-only-external-acc`（外部已有服务精度评测，测试端在容器内）。`release_only` 不是独立派单场景，只用于原部署任务的续接释放，见派单契约。按场景选文件，不跨场景手改；自然语言派单由当前 Agent 归一化为同等内容，并一次性确认授权字段。control.json 是阶段产物，不作为独立入口。先校验必填字段，缺失时一次性列出全部缺口向用户澄清。`nodes` 段逐节点投影为 bindings，`control.json` 只取 `task.control_node` 那一项，不重新推导授权；`task.id` 与各节点 `root` 末段、tasks 键、交付目录名保持一致。top_input 不写并行度与连接：`tensor-parallel-size` 由该实例 `devices` 数量派生，PD 的 `kv_transfer` 与 `routing` 由实例角色派生。事实类字段非空即视为派单方已确认，只核验存在性与冲突，不重新选值；为空时才现场发现。示例只示范结构，不得照抄其中的 host、devices、路径与端口。
+入口只有两种：机器派单直接提交 top_input；自然语言派单由当前 Agent 归一化为同等内容的 top_input，并一次性确认授权字段。两者共用 [派单契约](references/top-input.md)。
+
+### 派单方视角（上层主 Agent）
+
+当用户要求“把任务交给 subagent / 派单 / 起一个执行 agent”时，你是派单方，不是执行方。先向用户收齐四类信息，缺一项就停：
+
+1. **环境结论**：`existing`（每节点容器 id、image、`container_work_root`、`network`）、`owned`（明确创建授权 + `deployment.image`）或 `self`（existing 且 CLI 在容器内执行）。
+2. **任务形态**：`action`、`topology`、`eval_mode`、`on_idle`。
+3. **现场事实**：`host`、`allowed_root`、`guard_root`、`python`、`model_paths`、`devices`、`network`/`ports`、`tester`（含 `machine_id` 与 `datasets`）；PD 另加 `kv_transfer.connector` 与 proxy 的 `paths.proxy_program`。
+4. **授权与护栏**：`preempt_other_processes`、`create_work_root`、`control_node`、`deliverables.local_dir`、`constraints`。
+
+取值要求见 [dispatch-kit/README.md](../../dispatch-kit/README.md)，可复制的 prompt 见 [prompt.md](../../dispatch-kit/prompt.md)。不要替 subagent 写 plan/bindings，不要把示例值当授权，不要附带历史任务产物。
+
+**先定环境模式（owned / existing / self），再定任务形态（action / topology / eval_mode）。** 三个判定问题、各自的必填差异与停止规则见派单契约 §0；判不出容器归属就停，不自行创建容器，也不得把 owned 硬套成 existing。`scenarios.json` 只是已有示例的索引，不是支持范围的全部；没有示例的路由按派单契约 §2 与字段契约组装，不得因为找不到示例而改判环境模式。
+
+提交前用 `validate-top-input` 核对必填字段，缺失时一次性列出全部缺口向用户澄清，不进入 plan。`control.json` 是阶段产物，不作为独立入口。节点投影、`task.id` 与 `root` 派生、事实值只核验不重选、示例只示范结构等规则，以 [派单契约](references/top-input.md)、[字段契约](references/top-input/contract.md) 与 [派生表](references/top-input/derivation.md) 为准，本文件不重述。
 
 ## 阶段边界驱动的技能加载
 

@@ -9,6 +9,7 @@ from .external_executor import ExternalExecutor
 from .owned_executor import OwnedExecutor
 from .docker_node import DockerNode
 from .existing_container_node import ExistingContainerNode
+from .self_container_node import SelfContainerNode
 from .ssh_node import SSHNode
 from .remote_guard import HostGuard,resolve_guard_root
 from .protocol import ProtocolError
@@ -61,8 +62,12 @@ def build_executor(root,identity,*,machine_id_reader=local_machine_id,guard_root
                 raise ProtocolError('INVALID_INPUT: local node root binding differs')
             guard=HostGuard(guard_root or resolve_guard_root(binding,str(root)),
                             plan['task_id'],identity['nonce'])
+            container=binding.get('container')
             if existing_mode:
-                nodes[slot]=ExistingContainerNode(guard,binding.get('container'))
+                if isinstance(container,dict) and container.get('self') is True:
+                    nodes[slot]=SelfContainerNode(guard,container)
+                else:
+                    nodes[slot]=ExistingContainerNode(guard,container)
             else:
                 nodes[slot]=DockerNode(guard)
         else:
@@ -70,6 +75,11 @@ def build_executor(root,identity,*,machine_id_reader=local_machine_id,guard_root
                                identity['runtime_sha256'],identity['nonce'],coordinator_root=root)
     if len(local)!=1:
         raise ProtocolError('INVALID_INPUT: runtime must match one reviewed deployment node')
+    self_slots=[slot for slot in slots
+                if isinstance(bindings['nodes'][slot].get('container'),dict) and
+                bindings['nodes'][slot]['container'].get('self') is True]
+    if self_slots and (self_slots!=local or not existing_mode):
+        raise ProtocolError('INVALID_INPUT: self container node must be the local node')
     tester_host=None
     options={}
     if 'evaluation' in plan:

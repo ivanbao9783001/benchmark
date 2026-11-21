@@ -22,7 +22,7 @@
 
 ### 1.1 旧能力与解耦后的结构
 
-旧 `ascend-llm-deploy-eval` 是一个端到端 skill：`job_spec.json` + `bindings.json` → 生成脚本 → FULL 模式执行。新分支把它拆成 router / plan / deployment / eval / release 五个阶段，真正的协议与执行由 `.agents/ascend_llm_cli`（`deploy-eval-v2`）实现。
+旧版是端到端 skill：`job_spec.json` + `bindings.json` → 生成脚本 → FULL 模式执行。新分支把它拆成 router / plan / deployment / eval / release 五个阶段，真正的协议与执行由 `.agents/ascend_llm_cli`（`deploy-eval-v2`）实现。
 
 `ascend-llm-eval` 只负责「对一个已存在的服务做评测」：
 

@@ -5,7 +5,7 @@ description: Deploy and Eval v2 的服务测试规划、结果证据分析与阶
 
 # Eval
 
-依赖 deploy-eval-v2 CLI 0.1 与协议 1.0，先执行 `deploy-eval-v2 --version` 核对。共享 CLI 契约随 ascend_llm_cli 包提供；缺失依赖时明确报告，不切换到旧版。自有服务支持绑定远端测试机，需发布冻结包并核对 machine_id、独立 Python 进程能力 和主节点到测试机的 SSH；外部服务的 runtime 在测试机运行。远端停止未核验时保留服务和资源声明，进入 RECOVERY_REQUIRED。缓存重置只适用于 owned 评测：须有冻结权限及逐实例目标，全部实例核验空闲后执行，结果不明不重试、不启动负载；external_eval 由 `prepare-inputs` 固定 `reset_cache=false`，因此外部服务不具备清缓存能力，不得承诺或尝试。原生汇总及稳态窗口会按证据判定；缺失时间戳、未知汇总格式或前缀路由覆盖不完整时保持 UNVERIFIED，不将请求成功写成性能有效。
+依赖 deploy-eval-v2 CLI 0.1 与协议 1.0，先执行 `deploy-eval-v2 --version` 核对。共享 CLI 契约随 ascend_llm_cli 包提供；未安装时按 [安装与前置](../ascend-llm-router/references/installation.md) 安装并复验，安装失败才停止报告，不用其他实现替代。自有服务支持绑定远端测试机，需发布冻结包并核对 machine_id、独立 Python 进程能力 和主节点到测试机的 SSH；外部服务的 runtime 在测试机运行。远端停止未核验时保留服务和资源声明，进入 RECOVERY_REQUIRED。缓存重置只适用于 owned 评测：须有冻结权限及逐实例目标，全部实例核验空闲后执行，结果不明不重试、不启动负载；external_eval 由 `prepare-inputs` 固定 `reset_cache=false`，因此外部服务不具备清缓存能力，不得承诺或尝试。原生汇总及稳态窗口会按证据判定；缺失时间戳、未知汇总格式或前缀路由覆盖不完整时保持 UNVERIFIED，不将请求成功写成性能有效。
 
 独立入口接受 endpoint+model 或部署产出的 service.json，加 cases 与 tester JSON；通过 plan 的 prepare-inputs 准备新评测任务，并重新健康检查，不继承部署任务释放权限。执行输入为 service handle 和一个冻结 case；不依赖 deploy 私有 dispatch.json。外部端点通过 external_eval 计划登记，不要求先 deploy，也不自动获得清缓存、重启、停止或释放权限。不用 fake-service 冒充外部服务。
 
@@ -21,7 +21,7 @@ evaluation.completed 仅表示阶段结束。按结果决定下一 case 或收�
 
 ## 本阶段参考与交付
 
-依赖 CLI 0.1、协议 1.0，补丁版本以 `deploy-eval-v2 --version` 实际输出为准。[测试环境预检](references/benchmark-preflight.md)用于解释环境门控；远端测试器见 [远端测试](references/remote-tester.md)，结果核验见 [结果契约](references/result-validation.md)和[原生证据](references/native-result-evidence.md)，owned 性能 case 显式请求清缓存时才读 [缓存重置](references/cache-reset.md)。共享请求字段见已安装 ascend-llm-router 的 references/cli-contract.md。本阶段请求体见 [阶段请求](references/requests.md)，精度与性能共用同一 eval 请求形状。
+[测试环境预检](references/benchmark-preflight.md)用于解释环境门控；远端测试器见 [远端测试](references/remote-tester.md)，结果核验见 [结果契约](references/result-validation.md)和[原生证据](references/native-result-evidence.md)，owned 性能 case 显式请求清缓存时才读 [缓存重置](references/cache-reset.md)。共享请求字段见已安装 ascend-llm-router 的 references/cli-contract.md。本阶段请求体见 [阶段请求](references/requests.md)，精度与性能共用同一 eval 请求形状。
 
 从 get-status 获取当前版本，使用冻结 service_id/case_id 提交 eval；RUNNING 时按 next_cursor 等待。保持 tester.environment 一致，进程使用直接 Python 启动。交付结果引用、实际负载、三项状态与清理证据；外部服务不交给 release 停止。缺少对应模式的证据时保留 UNVERIFIED。
 
@@ -30,7 +30,7 @@ evaluation.completed 仅表示阶段结束。按结果决定下一 case 或收�
 ## 容器内测试工具
 AISBench 可位于宿主或已有运行容器。宿主未找到工具时，继续只读检查已有容器的工具、解释器、依赖、tokenizer和网络；不要要求用户重复提供可自行发现的绑定。
 
-容器 tester 的字段、路径归属（`python`/`aisbench`/`model_path`/`environment`/`datasets` 属容器内，`host_python` 与 `control.json` 的 `python` 属宿主）以及 `container_work_root` 的适用条件（容器未把 `work_root` 暴露在同一路径时才需要）以 plan 的 [plan-contract.md](../../ascend-llm-plan/references/plan-contract.md) 为唯一来源，本阶段不重述。
+容器 tester 的字段、路径归属（`python`/`aisbench`/`model_path`/`environment`/`datasets` 属容器内，`host_python` 与 `control.json` 的 `python` 属宿主）以及 `container_work_root` 的适用条件（容器未把 `work_root` 暴露在同一路径时才需要）以 plan 的 [plan-contract.md](../ascend-llm-plan/references/plan-contract.md) 为唯一来源，本阶段不重述。
 
 本阶段只负责执行边界：按 plan 阶段的冻结前核验结果复核容器身份，并只读确认 endpoint 从容器可达、AISBench 依赖完整（工具存在不代表依赖完整）。使用公开CLI执行，不手写docker exec负载封装。容器仅提供测试环境，不授予停止、重启、删除容器或被测服务的权限。执行器只停止本任务工具进程组；证据回收失败或清理未知必须报告，不能标记完整。
 

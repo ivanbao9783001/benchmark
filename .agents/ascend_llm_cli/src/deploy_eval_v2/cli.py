@@ -6,7 +6,7 @@ from pathlib import Path, PurePosixPath
 import sys
 from .contracts import validate_command, validate_query, exit_code
 from .protocol import ProtocolError, encode, envelope
-from .ssh_transport import exchange, ssh_argv
+from .ssh_transport import exchange, host_argv
 from .json_io import load_json
 
 
@@ -27,7 +27,7 @@ def main(argv=None):
         parser.add_argument('--version', action='version', version='deploy-eval-v2 0.1.0a14+local.devicemap1; protocol 1.0; production_executor=guarded; acceptance=local-only')
         parser.add_argument('--config', default=os.environ.get('DEPLOY_EVAL_V2_CONFIG'))
         commands = parser.add_subparsers(dest='kind', required=True)
-        for name in ('deploy', 'eval', 'release', 'cancel', 'freeze-inputs', 'verify-inputs','draft-review','package-runtime','publish-task','start-task','check-ready','install-skills','socket-start','stop-runtime','prepare-inputs','export-contracts'):
+        for name in ('deploy', 'eval', 'release', 'cancel', 'freeze-inputs', 'verify-inputs','draft-review','package-runtime','publish-task','start-task','check-ready','install-skills','socket-start','stop-runtime','prepare-inputs','export-contracts','validate-top-input'):
             commands.add_parser(name).add_argument('--request', required=True)
         for name in ('get-status', 'wait-event', 'read-result'):
             child = commands.add_parser(name)
@@ -49,9 +49,17 @@ def main(argv=None):
                 child.add_argument('--scan-offset',type=int,default=0)
                 child.add_argument('--scan-line',type=int,default=1)
         args = parser.parse_args(argv)
-        if args.kind in ('freeze-inputs', 'verify-inputs','draft-review','package-runtime','publish-task','start-task','check-ready','install-skills','socket-start','stop-runtime','prepare-inputs','export-contracts'):
+        if args.kind in ('freeze-inputs', 'verify-inputs','draft-review','package-runtime','publish-task','start-task','check-ready','install-skills','socket-start','stop-runtime','prepare-inputs','export-contracts','validate-top-input'):
             request=load(args.request)
-            if args.kind=='prepare-inputs':
+            if args.kind=='validate-top-input':
+                from .top_input import validate
+                report=validate(request)
+                response=dict(report, status='OK' if report['valid'] else 'ERROR')
+                if not report['valid']:
+                    response['error']=dict(code='TOP_INPUT_INVALID',
+                                           message='%d issue(s)'%len(report['issues']),
+                                           retryable=False)
+            elif args.kind=='prepare-inputs':
                 from .stage_inputs import prepare
                 response=prepare(request)
             elif args.kind=='export-contracts':
@@ -103,7 +111,8 @@ def main(argv=None):
         root = PurePosixPath(binding['root'])
         bootstrap='import sys; sys.path.insert(0, '+repr(str(root)+'/runtime')+'); from deploy_eval_v2.remote_client import main; raise SystemExit(main())'
         remote = [binding.get('python', 'python3'), '-B', '-c', bootstrap, '--root', str(root)]
-        response = exchange(ssh_argv(binding['host'], remote), request,
+        link = 'local' if binding.get('self') is True else 'ssh'
+        response = exchange(host_argv(binding['host'], remote, link), request,
                             timeout=request.get('wait_ms', 30000)/1000+15,
                             response_limit=request.get('max_bytes', 8192))
         code = exit_code(response)

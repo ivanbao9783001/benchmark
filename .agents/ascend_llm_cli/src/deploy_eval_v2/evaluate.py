@@ -57,7 +57,20 @@ def matches_prefix_target(observation, case):
             and (minimum == 0 or isinstance(common, int) and common >= minimum))
 
 
-def execute_external_case(plan, bindings, case_id, folder, cancelled, *, verified_local_host):
+def select_runner(tester, folder, deadline, verified_local_container):
+    """Local container testers run here; every other container runs via docker."""
+    if 'container' in tester and tester['container']['id'] != verified_local_container:
+        if verified_local_container is not None:
+            raise ProtocolError('INVALID_INPUT: tester container must be the control container')
+        from .container_tester import ContainerTester
+        return ContainerTester(tester, folder, deadline).run
+    if not Path(tester['aisbench']).is_file() or not Path(tester['model_path']).is_dir():
+        raise ProtocolError('INVALID_INPUT: AISBench or tokenizer assets unavailable')
+    return run_logged
+
+
+def execute_external_case(plan, bindings, case_id, folder, cancelled, *,
+                          verified_local_host, verified_local_container=None):
     """Must run on the explicitly verified tester; never choose local by hostname guess."""
     normalized, derived = normalize_external_plan(plan)
     validate_eval_bindings(plan, bindings)
@@ -82,12 +95,7 @@ def execute_external_case(plan, bindings, case_id, folder, cancelled, *, verifie
     case, tester, argv = prepare_case(plan, bindings, case_id, folder,check_files=False)
     folder = Path(folder)
     (folder/'health.json').write_text(json.dumps(health_evidence), encoding='utf-8')
-    runner = run_logged
-    if 'container' in tester:
-        from .container_tester import ContainerTester
-        runner = ContainerTester(tester, folder, deadline).run
-    elif not Path(tester['aisbench']).is_file() or not Path(tester['model_path']).is_dir():
-        raise ProtocolError('INVALID_INPUT: AISBench or tokenizer assets unavailable')
+    runner = select_runner(tester, folder, deadline, verified_local_container)
     environment = dict(os.environ)
     environment.update(tester.get('environment', {}))
     atomic_json(folder/'tester-environment.json', tester.get('environment', {}))

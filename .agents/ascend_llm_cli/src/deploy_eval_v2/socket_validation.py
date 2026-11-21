@@ -6,7 +6,7 @@ from .protocol import ProtocolError, envelope
 from .publication import build_archive
 from .publication_cli import task_binding
 from .ssh_publication import upload_archive
-from .ssh_transport import exchange, ssh_argv
+from .ssh_transport import exchange, host_argv
 
 
 def start_socket(request, config):
@@ -17,14 +17,17 @@ def start_socket(request, config):
         raise ProtocolError('INVALID_INPUT: nonce')
     binding = task_binding(config, request['task_ref'])
     python = binding['python']
+    link = 'local' if binding.get('self') is True else 'ssh'
     with tempfile.TemporaryDirectory() as temporary:
         archive = Path(temporary)/'runtime.zip'
         package = build_archive(Path(__file__).parent, archive)
-        uploaded = upload_archive(binding['host'], python, binding['root'], archive, request['task_ref'])
+        uploaded = upload_archive(binding['host'], python, binding['root'], archive, request['task_ref'],
+                                  link=link)
     source = Path(__file__).with_name('socket_receiver.py').read_text(encoding='utf-8')
     packet = dict(task_id=request['task_ref'], nonce=request['nonce'], python=python,
                   runtime_sha256=package['runtime_sha256'], archive_sha256=uploaded['sha256'])
-    return exchange(ssh_argv(binding['host'], [python, '-B', '-c', source, binding['root']]), packet, timeout=60)
+    return exchange(host_argv(binding['host'], [python, '-B', '-c', source, binding['root']], link),
+                    packet, timeout=60)
 
 
 def start_installed(root, request):
@@ -52,8 +55,9 @@ def stop_runtime(request, config):
     if set(request) != {'task_ref','nonce'}:
         raise ProtocolError('INVALID_INPUT: stop-runtime request')
     binding=task_binding(config,request['task_ref'])
+    link='local' if binding.get('self') is True else 'ssh'
     script='import sys; sys.path.insert(0, '+repr(binding['root']+'/runtime')+'); from deploy_eval_v2.socket_validation import stop_cli; stop_cli('+repr(binding['root'])+')'
-    return exchange(ssh_argv(binding['host'],[binding['python'],'-B','-c',script]),
+    return exchange(host_argv(binding['host'],[binding['python'],'-B','-c',script],link),
                     dict(task_id=request['task_ref'],nonce=request['nonce']),timeout=15)
 
 

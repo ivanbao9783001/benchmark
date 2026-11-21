@@ -43,20 +43,24 @@ def locked_stream(path):
                 msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
 
 
-def append(path, record):
-    raw=json.dumps(record, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode('utf-8')+b'\n'
+def append_many(path, records):
+    raw=b''.join(json.dumps(record, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode('utf-8')+b'\n' for record in records)
     with locked_stream(path) as stream:
         stream.write(raw)
         stream.flush()
         os.fsync(stream.fileno())
 
 
+def append(path, record):
+    append_many(path, [record])
+
+
 def diagnostic(path, message, **fields):
     root=task_root(path)
     text=str(message)
-    for offset in range(0, max(1,len(text)), 2048):
-        append(root/'task.jsonl',dict(record_type='diagnostic',time=now(),source=Path(path).name,
-                                     message=text[offset:offset+2048],**fields))
+    append_many(root/'task.jsonl',[dict(record_type='diagnostic',time=now(),source=Path(path).name,
+                                       message=text[offset:offset+2048],**fields)
+                                  for offset in range(0,max(1,len(text)),2048)])
     return root/'task.jsonl'
 
 

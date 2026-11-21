@@ -5,8 +5,9 @@
 ## 入口
 
 - 先读 [skills/ascend-llm-router/SKILL.md](skills/ascend-llm-router/SKILL.md)，按其路由表选择阶段技能。
-- 机器派单唯一入口：[skills/ascend-llm-router/references/top-input.md](skills/ascend-llm-router/references/top-input.md)；已填示例在同目录 `examples/`，按场景选文件，不跨场景手改。
+- 派单契约（机器派单与自然语言派单共用）：[skills/ascend-llm-router/references/top-input.md](skills/ascend-llm-router/references/top-input.md)；已填示例在同目录 `examples/`，按场景选文件，不跨场景手改。
 - 阶段技能：`ascend-llm-plan` → `ascend-llm-deployment` → `ascend-llm-eval` → `ascend-llm-release`，目录均在 `skills/` 下。
+- 派单方工具（非技能，不参与技能加载）：[dispatch-kit/README.md](dispatch-kit/README.md)，含环境判定、必给信息清单、校验命令与 prompt 模板。
 - CLI 安装与命令面：[ascend_llm_cli/README.md](ascend_llm_cli/README.md)；补丁版本以 `deploy-eval-v2 --version` 实际输出为准。
 - 人类导航：[README.md](README.md)；架构说明：[ascend_llm_cli/DESIGN.md](ascend_llm_cli/DESIGN.md)。
 

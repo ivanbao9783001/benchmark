@@ -1,0 +1,231 @@
+{
+  "schema_version": "top-input-scenarios/1",
+  "coverage": "只登记已有 example 的路由，不是支持范围的全部。owned 的其余组合、单机 PD、self 的 perf 均无示例，按 references/top-input.md §2 与 contract.md 组装，不得因缺示例改判环境模式。",
+  "scenarios": [
+    {
+      "id": "colocated-existing-deploy-only",
+      "action": "deploy_only",
+      "eval_mode": null,
+      "topology": "colocated",
+      "runtime": "existing_container",
+      "self": false,
+      "example": "examples/colocated-existing-deploy-only.json",
+      "playbook": "playbooks/colocated-existing-deploy-only.md",
+      "required_facts": [
+        "task.action=deploy_only",
+        "task.on_idle=keep_service",
+        "nodes.<id>.container",
+        "nodes.<id>.container_work_root",
+        "nodes.<id>.network",
+        "nodes.<id>.model_paths",
+        "deployment.topology=colocated",
+        "deployment.instances[0].devices",
+        "deployment.instances[0].ports.http"
+      ],
+      "cli": [
+        "prepare-inputs (stage=deploy)",
+        "package-runtime",
+        "draft-review",
+        "freeze-inputs",
+        "check-ready",
+        "publish-task",
+        "start-task",
+        "deploy"
+      ]
+    },
+    {
+      "id": "colocated-owned-deploy-eval-acc",
+      "action": "deploy_and_eval",
+      "eval_mode": "acc",
+      "topology": "colocated",
+      "runtime": "owned_container",
+      "self": false,
+      "example": "examples/colocated-owned-deploy-eval-acc.json",
+      "playbook": "playbooks/colocated-owned-deploy-eval-acc.md",
+      "required_facts": [
+        "task.action=deploy_and_eval",
+        "task.eval_mode=acc",
+        "nodes.<id>.model_paths",
+        "deployment.image（sha256 摘要）",
+        "deployment.topology=colocated",
+        "evaluation.tester",
+        "evaluation.tester.datasets.<dataset-id>",
+        "evaluation.dataset"
+      ],
+      "cli": [
+        "package-runtime",
+        "draft-review",
+        "freeze-inputs",
+        "check-ready",
+        "publish-task",
+        "start-task",
+        "deploy",
+        "eval",
+        "release (on_idle=release_owned)"
+      ]
+    },
+    {
+      "id": "colocated-existing-deploy-eval-perf",
+      "action": "deploy_and_eval",
+      "eval_mode": "perf",
+      "topology": "colocated",
+      "runtime": "existing_container",
+      "self": false,
+      "example": "examples/colocated-existing-deploy-eval-perf.json",
+      "playbook": "playbooks/colocated-existing-deploy-eval-perf.md",
+      "required_facts": [
+        "task.action=deploy_and_eval",
+        "task.eval_mode=perf",
+        "nodes.<id>.container",
+        "nodes.<id>.container_work_root",
+        "nodes.<id>.network",
+        "nodes.<id>.model_paths",
+        "deployment.topology=colocated",
+        "evaluation.tester",
+        "evaluation.tester.datasets.synthetic"
+      ],
+      "cli": [
+        "package-runtime",
+        "draft-review",
+        "freeze-inputs",
+        "check-ready",
+        "publish-task",
+        "start-task",
+        "deploy",
+        "eval",
+        "release (on_idle=release_owned)"
+      ]
+    },
+    {
+      "id": "colocated-existing-deploy-eval-acc",
+      "action": "deploy_and_eval",
+      "eval_mode": "acc",
+      "topology": "colocated",
+      "runtime": "existing_container",
+      "self": false,
+      "example": "examples/colocated-existing-deploy-eval-acc.json",
+      "playbook": "playbooks/colocated-existing-deploy-eval-acc.md",
+      "required_facts": [
+        "task.action=deploy_and_eval",
+        "task.eval_mode=acc",
+        "nodes.<id>.container",
+        "nodes.<id>.container_work_root",
+        "nodes.<id>.network",
+        "nodes.<id>.model_paths",
+        "deployment.topology=colocated",
+        "evaluation.tester",
+        "evaluation.tester.datasets.<dataset-id>",
+        "evaluation.dataset"
+      ],
+      "cli": [
+        "package-runtime",
+        "draft-review",
+        "freeze-inputs",
+        "check-ready",
+        "publish-task",
+        "start-task",
+        "deploy",
+        "eval",
+        "release (on_idle=release_owned)"
+      ]
+    },
+    {
+      "id": "colocated-existing-self-deploy-eval-acc",
+      "action": "deploy_and_eval",
+      "eval_mode": "acc",
+      "topology": "colocated",
+      "runtime": "existing_container",
+      "self": true,
+      "example": "examples/colocated-existing-self-deploy-eval-acc.json",
+      "playbook": "playbooks/colocated-existing-self-deploy-eval-acc.md",
+      "required_facts": [
+        "task.action=deploy_and_eval",
+        "task.eval_mode=acc",
+        "task.control_node=<the container node>",
+        "nodes.<id>.container.self=true",
+        "nodes.<id>.container",
+        "nodes.<id>.container_work_root",
+        "nodes.<id>.network",
+        "nodes.<id>.model_paths",
+        "deployment.topology=colocated",
+        "evaluation.tester.container=<same as node container>",
+        "evaluation.tester.datasets.<dataset-id>",
+        "evaluation.dataset"
+      ],
+      "cli": [
+        "package-runtime",
+        "draft-review",
+        "freeze-inputs",
+        "check-ready",
+        "publish-task (local)",
+        "start-task (local)",
+        "deploy",
+        "eval",
+        "release (on_idle=release_owned)"
+      ]
+    },
+    {
+      "id": "pd-dual-host-existing-deploy-only",
+      "action": "deploy_only",
+      "eval_mode": null,
+      "topology": "pd",
+      "runtime": "existing_container",
+      "self": false,
+      "example": "examples/pd-dual-host-existing-deploy-only.json",
+      "playbook": "playbooks/pd-dual-host-existing-deploy-only.md",
+      "required_facts": [
+        "task.action=deploy_only",
+        "task.on_idle=keep_service",
+        "nodes.<id>.container（每个节点）",
+        "nodes.<id>.container_work_root（每个节点）",
+        "nodes.<id>.network（每个节点）",
+        "nodes.<id>.model_paths（每个节点）",
+        "nodes.<proxy-node>.paths.proxy_program",
+        "deployment.topology=pd",
+        "deployment.kv_transfer.connector",
+        "deployment.instances（prefill + decode + proxy）",
+        "deployment.endpoint.instance=<proxy>"
+      ],
+      "cli": [
+        "prepare-inputs (stage=deploy)",
+        "package-runtime",
+        "draft-review",
+        "freeze-inputs",
+        "check-ready",
+        "publish-task",
+        "start-task",
+        "deploy"
+      ]
+    },
+    {
+      "id": "eval-only-external-acc",
+      "action": "eval_only",
+      "eval_mode": "acc",
+      "topology": null,
+      "runtime": null,
+      "self": false,
+      "example": "examples/eval-only-external-acc.json",
+      "playbook": "playbooks/eval-only-external-acc.md",
+      "required_facts": [
+        "task.action=eval_only",
+        "task.eval_mode=acc",
+        "nodes.<id>.host=控制端兼测试机",
+        "evaluation.service.endpoint",
+        "evaluation.service.model",
+        "evaluation.tester",
+        "evaluation.tester.datasets.<dataset-id>",
+        "evaluation.dataset"
+      ],
+      "cli": [
+        "prepare-inputs (stage=eval)",
+        "package-runtime",
+        "draft-review",
+        "freeze-inputs",
+        "check-ready",
+        "publish-task",
+        "start-task",
+        "eval"
+      ]
+    }
+  ]
+}

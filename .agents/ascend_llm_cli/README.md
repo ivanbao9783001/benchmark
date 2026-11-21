@@ -1,6 +1,6 @@
 # Ascend LLM CLI
 
-为新版本 Ascend LLM skills 提供 JSON 驱动的部署、评测与资源释放能力。稳定版 `ascend-llm-deploy-eval` 独立保留，不导入、不修改。
+为新版本 Ascend LLM skills 提供 JSON 驱动的部署、评测与资源释放能力。
 
 ## 功能边界
 
@@ -61,6 +61,8 @@ deploy-eval-v2 export-contracts --request export.json
 ```
 
 export.json 为 `{"destination":"contracts"}`，从当前安装包导出唯一权威 Schema。完整的审阅、打包、冻结、发布、启动及阶段请求字段见 [DESIGN](DESIGN.md)。运行阶段使用 `deploy-eval-v2 --config CONTROL deploy --request FILE`（eval/release 同理）；具体示例见设计文档。
+
+派单契约在进入 plan 前用 `deploy-eval-v2 validate-top-input --request top_input.json` 校验；返回 `{valid, scenario, issues[]}`，不读 `--config`、不连接现场，退出码 2 表示存在缺口。
 
 ## 输出与日志
 

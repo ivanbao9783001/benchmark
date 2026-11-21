@@ -17,6 +17,17 @@ def ssh_argv(host, remote_argv):
             host, shlex.join(remote_argv)]
 
 
+def host_argv(host, argv, link='ssh'):
+    """One target's argv; a self container runs the same protocol locally."""
+    if link == 'local':
+        if not isinstance(argv, list) or not argv:
+            raise ProtocolError('INVALID_INPUT')
+        return list(argv)
+    if link != 'ssh':
+        raise ProtocolError('INVALID_INPUT: transport link')
+    return ssh_argv(host, argv)
+
+
 def exchange(argv, request, timeout=45, response_limit=8192, cancelled=None, input_file=None):
     """One final JSON response. Threads drain pipes with fixed memory bounds."""
     payload = encode(request) + b'\n'

@@ -25,6 +25,40 @@ class ExecutorFactoryTests(unittest.TestCase):
             self.assertIsInstance(factory.call_args.kwargs['evaluator'],RemoteEvaluation)
             self.assertEqual(factory.call_args.kwargs['verified_tester_host'],'tester')
 
+    def test_self_container_selects_the_local_adapter(self):
+        root=str(Path('/work/t'))
+        values={'plan.json':dict(task_id='t',intent='deploy',execution={'max_retries':0},
+                    deployment={'runtime':{'mode':'existing_container'}}),
+                'bindings.json':dict(nodes={'a':dict(machine_id='d'*32,
+                    container=dict(id='c'*64,image='sha256:'+'e'*64,self=True))}),
+                'compiled.json':{'topology':{'groups':{'a/model':{'node':'a','root':root,'self':True}}}}}
+        with patch('deploy_eval_v2.executor_factory.validate_identity'),\
+             patch('deploy_eval_v2.executor_factory.verify_runtime'),\
+             patch('deploy_eval_v2.executor_factory.verify_frozen',return_value=values),\
+             patch('deploy_eval_v2.executor_factory.HostGuard'),\
+             patch('deploy_eval_v2.executor_factory.OwnedExecutor') as factory:
+            build_executor(root,dict(identity(),task_root=root),machine_id_reader=lambda:'d'*32)
+            from deploy_eval_v2.self_container_node import SelfContainerNode
+            self.assertIsInstance(factory.call_args.args[4]['a'],SelfContainerNode)
+
+    def test_self_flag_outside_the_local_node_is_rejected(self):
+        root=str(Path('/work/t'))
+        values={'plan.json':dict(task_id='t',intent='deploy',execution={'max_retries':0},
+                    deployment={'runtime':{'mode':'existing_container'}}),
+                'bindings.json':dict(nodes={
+                    'a':dict(machine_id='d'*32,container=dict(id='c'*64,image='sha256:'+'e'*64)),
+                    'b':dict(machine_id='f'*32,container=dict(id='1'*64,image='sha256:'+'2'*64,self=True))}),
+                'compiled.json':{'topology':{'groups':{
+                    'a/model':{'node':'a','root':root},
+                    'b/model':{'node':'b','host':'remote.invalid','root':'/remote/t'}}}}}
+        with patch('deploy_eval_v2.executor_factory.validate_identity'),\
+             patch('deploy_eval_v2.executor_factory.verify_runtime'),\
+             patch('deploy_eval_v2.executor_factory.verify_frozen',return_value=values),\
+             patch('deploy_eval_v2.executor_factory.HostGuard'),\
+             patch('deploy_eval_v2.executor_factory.OwnedExecutor'):
+            with self.assertRaisesRegex(ProtocolError,'self container node must be the local node'):
+                build_executor(root,dict(identity(),task_root=root),machine_id_reader=lambda:'d'*32)
+
     def test_external_host_attestation_required_before_executor_construction(self):
         plan=external_plan()
         bound=eval_bindings()

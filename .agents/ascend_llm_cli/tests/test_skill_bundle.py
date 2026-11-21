@@ -8,16 +8,16 @@ from deploy_eval_v2.protocol import ProtocolError
 class SkillBundleTests(unittest.TestCase):
     source=Path(__file__).resolve().parents[2]/'skills'
 
-    def test_all_five_install_and_replay_preserves_stable(self):
+    def test_all_five_install_and_replay_preserves_unrelated(self):
         with tempfile.TemporaryDirectory() as folder:
-            stable=Path(folder)/'ascend-llm-deploy-eval'
-            stable.mkdir()
-            (stable/'SKILL.md').write_text('untouched')
+            unrelated=Path(folder)/'user-skill'
+            unrelated.mkdir()
+            (unrelated/'SKILL.md').write_text('untouched')
             request=dict(source=str(self.source),destination=folder)
             self.assertTrue(install(request)['installed'])
             self.assertTrue(install(request)['installed'])
             self.assertEqual(inventory(folder),inventory(self.source))
-            self.assertEqual((stable/'SKILL.md').read_text(),'untouched')
+            self.assertEqual((unrelated/'SKILL.md').read_text(),'untouched')
 
     def test_conflict_prevents_partial_install(self):
         with tempfile.TemporaryDirectory() as folder:

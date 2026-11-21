@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch,Mock
 from deploy_eval_v2.cli import main
-from deploy_eval_v2.publication_cli import publish,publication_targets
+from deploy_eval_v2.publication_cli import publish,publication_targets,start_task
 from deploy_eval_v2.compiler import freeze_inputs,review_inputs
 from deploy_eval_v2.plan_model import normalize_external_plan
 from deploy_eval_v2.protocol import ProtocolError
@@ -70,6 +70,21 @@ class PublicationCLITests(unittest.TestCase):
             self.assertEqual(args[-2:],(request['runtime_sha256'],request['bundle_sha256']))
             # Temporary archive lifetime ends only after the synchronous publisher returns.
             self.assertFalse(Path(args[4]).exists())
+
+    def test_self_task_publishes_and_starts_on_the_local_machine(self):
+        with tempfile.TemporaryDirectory() as folder:
+            request=self.fixture(folder)
+            publisher=Mock(return_value=dict(status='EVENTS'))
+            config={'tasks':{'t':dict(host='host.invalid',root='/work/t',allowed_root='/work',self=True)}}
+            result=publish(request,config,publisher=publisher,prober=Mock())
+            self.assertFalse(result['started'])
+            self.assertEqual(publisher.call_args.kwargs,{'link':'local'})
+            start=dict(task_ref='t',runtime_sha256='a'*64,bundle_sha256='b'*64,nonce='c'*64)
+            transport=Mock()
+            start_task(start,config,transport=transport)
+            argv=transport.call_args.args[0]
+            self.assertEqual(argv[0],'/usr/bin/python3')
+            self.assertNotIn('ssh',argv)
 
     def test_invalid_digest_or_root_does_not_contact_host(self):
         with tempfile.TemporaryDirectory() as folder:

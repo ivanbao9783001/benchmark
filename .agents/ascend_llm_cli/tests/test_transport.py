@@ -2,7 +2,7 @@ import sys
 import unittest
 import threading
 import time
-from deploy_eval_v2.ssh_transport import exchange, ssh_argv
+from deploy_eval_v2.ssh_transport import exchange, host_argv, ssh_argv
 from deploy_eval_v2.protocol import ProtocolError
 
 
@@ -27,6 +27,13 @@ class TransportTests(unittest.TestCase):
         self.assertIn('-T', ssh_argv('user@host', ['python3', '/a b/client.py']))
         with self.assertRaises(ProtocolError):
             ssh_argv('-oProxyCommand=bad', [])
+
+    def test_self_link_runs_the_same_argv_locally(self):
+        remote=['python3','-B','-c','print(1)']
+        self.assertEqual(host_argv('user@host',remote),ssh_argv('user@host',remote))
+        self.assertEqual(host_argv('user@host',remote,'local'),remote)
+        with self.assertRaises(ProtocolError):
+            host_argv('user@host',remote,'telnet')
 
     def test_duplicate_keys_and_nonfinite_json_are_rejected(self):
         for data in ('{"protocol_version":"1.0","task_id":"other","task_id":"t","status":"EVENTS"}',

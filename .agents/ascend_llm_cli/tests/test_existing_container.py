@@ -58,6 +58,20 @@ class ExistingContainerCompileTests(unittest.TestCase):
         self.assertTrue(any('/workspace/tasks/t/logs/prefill/logs/profiler' in value
                             for value in group['commands'][0]['argv']))
 
+    def test_self_flag_is_projected_into_the_compiled_group(self):
+        bound = existing_bindings()
+        self.assertNotIn('self', compile_bound_deployment(existing_plan(), bound)['groups']['node_a/model'])
+        bound['nodes']['node_a']['container']['self'] = True
+        group = compile_bound_deployment(existing_plan(), bound)['groups']['node_a/model']
+        self.assertIs(group['self'], True)
+
+    def test_self_flag_requires_one_placed_borrowed_node(self):
+        bound = existing_bindings()
+        bound['nodes']['node_a']['container']['self'] = True
+        bound['nodes']['node_b'] = json.loads(json.dumps(bound['nodes']['node_a']))
+        with self.assertRaisesRegex(ProtocolError, 'self container node'):
+            compile_bound_deployment(existing_plan(), bound)
+
     def test_scripts_separate_host_source_from_container_execution(self):
         result = compile_bound_deployment(existing_plan(), existing_bindings())
         script = next(item for item in compile_service_scripts(result)['node_a/model']

@@ -93,10 +93,10 @@ wait-event 的 after-seq 只使用实际交付的 next_cursor。
 ## 五技能安装
 
 共享 CLI 安装后，使用 `install-skills --request skills-install.json`。请求为
-`{"source":"D:/autobenchmark/skills","destination":"目标 Agent 的技能目录"}`。
+`{"source":"<repo>/.agents/skills","destination":"目标 Agent 的技能目录"}`，安装与前置检查见
+[installation.md](../../ascend-llm-router/references/installation.md)。
 安装器校验五个技能的身份和 CLI/协议声明；已存在且不同的内容返回
 REQUEST_CONFLICT，不覆盖个人草案。先核对并选择新目录进行验收。
-本次开发没有安装到个人技能目录。
 
 NPU 清理核验需要 fuser 可用且有设备检查权限；缺失工具、设备错误、
 端口占用或节点不可达均保留资源声明，不终止其他任务。

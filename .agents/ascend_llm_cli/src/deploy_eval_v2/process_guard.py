@@ -41,7 +41,7 @@ def run_logged(argv, log, deadline, cancelled, cwd=None, env=None):
                 decoder=codecs.getincrementaldecoder('utf-8')(errors='replace')
                 try:
                     while True:
-                        data=process.stdout.read1(2048)
+                        data=process.stdout.read1(65536)
                         text=decoder.decode(data,final=not data)
                         if text: diagnostic(log,text)
                         if not data: break

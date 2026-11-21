@@ -67,7 +67,7 @@
         "id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         "image": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       },
-      "container_work_root": "/srv/containers/tester",
+      "container_work_root": "/srv/containers/work/case-acc-existing-01-tester",
       "datasets": {
         "gpqa": {
           "type": "aisbench_task",

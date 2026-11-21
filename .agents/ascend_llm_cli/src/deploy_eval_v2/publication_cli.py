@@ -8,7 +8,7 @@ from .protocol import ProtocolError,envelope
 from .publication import build_archive,install_archive
 from .remote_guard import resolve_guard_root
 from .ssh_publication import probe_guard_root,publish_task
-from .ssh_transport import exchange,ssh_argv
+from .ssh_transport import exchange,host_argv
 
 
 def task_binding(config,task):
@@ -102,7 +102,8 @@ def publish(request,config,*,publisher=publish_task,prober=probe_guard_root):
             guard=guards.get((target['host'],target['root']))
             if guard is not None:
                 try:
-                    prober(target['host'],target.get('python','/usr/bin/python3'),guard,task)
+                    prober(target['host'],target.get('python','/usr/bin/python3'),guard,task,
+                           link='local' if target.get('self') is True else 'ssh')
                 except (ProtocolError,OSError) as error:
                     response=envelope(task,0,'ERROR')
                     response.update(publication=dict(completed_targets=completed,total_targets=len(targets),
@@ -112,7 +113,8 @@ def publish(request,config,*,publisher=publish_task,prober=probe_guard_root):
                     return response
             try:
                 publisher(target['host'],target.get('python','/usr/bin/python3'),target['root'],
-                          request['runtime_archive'],inputs,task,request['runtime_sha256'],request['bundle_sha256'])
+                          request['runtime_archive'],inputs,task,request['runtime_sha256'],request['bundle_sha256'],
+                          link='local' if target.get('self') is True else 'ssh')
                 completed+=1
             except (ProtocolError,OSError):
                 response=envelope(task,0,'ERROR')
@@ -140,4 +142,5 @@ def start_task(request,config,*,transport=exchange):
     bootstrap='import sys; sys.path.insert(0, '+repr(root+'/runtime')+'); from deploy_eval_v2.startup import main; raise SystemExit(main())'
     remote=dict(protocol_version='1.0',task_id=request['task_ref'],python=python,
                 **{k:request[k] for k in fields-{'task_ref'}})
-    return transport(ssh_argv(binding['host'],[python,'-B','-c',bootstrap,'--root',root]),remote,timeout=90)
+    link='local' if binding.get('self') is True else 'ssh'
+    return transport(host_argv(binding['host'],[python,'-B','-c',bootstrap,'--root',root],link),remote,timeout=90)

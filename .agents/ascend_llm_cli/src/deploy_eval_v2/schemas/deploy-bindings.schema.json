@@ -221,6 +221,10 @@
               "image": {
                 "type": "string",
                 "pattern": "^sha256:[a-f0-9]{64}$"
+              },
+              "self": {
+                "type": "boolean",
+                "description": "This node is the control node and the borrowed container is the one the control process itself runs in: no SSH and no docker CLI. At most one node may set it and it must exist in runtime.mode=existing_container."
               }
             },
             "description": "Borrowed existing container; only for runtime.mode=existing_container. Identity is verified before any effect and the container is never created, started or removed."

@@ -92,6 +92,10 @@ def compile_bound_deployment(plan, bindings):
                 launch['preserve_reference'] = True
                 if 'hccl' in ports and 'HCCL_IF_BASE_PORT' in launch.get('env', {}) and str(launch['env']['HCCL_IF_BASE_PORT']) != str(ports['hccl']):
                     raise ProtocolError('INVALID_INPUT: HCCL port conflicts with binding')
+        self_slots=[slot for slot,value in bindings['nodes'].items()
+                    if isinstance(value.get('container'),dict) and value['container'].get('self') is True]
+        if self_slots and (not existing or len(self_slots)!=1 or self_slots[0] not in selected):
+            raise ProtocolError('INVALID_INPUT: self container node')
         # Different logical nodes sharing a host could hide device/port collisions.
         hosts = [bindings['nodes'][slot]['host'].split('@')[-1].lower() for slot in selected]
         if len(hosts) != len(set(hosts)):
@@ -107,6 +111,8 @@ def compile_bound_deployment(plan, bindings):
                 # under the unchanged host task root.
                 group['container_root'] = str(PurePosixPath(binding['container_work_root'])/plan['task_id'])
                 group['mounts'] = []
+                if binding['container'].get('self') is True:
+                    group['self'] = True
             else:
                 group['mounts'] = resolve_mounts(binding)
                 model_path = binding['model_paths'][deployment['model']['id']]

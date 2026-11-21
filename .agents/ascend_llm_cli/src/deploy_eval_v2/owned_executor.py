@@ -30,6 +30,9 @@ class OwnedExecutor:
         values=self.inputs()
         self.task_id=values['plan.json']['task_id']
         self.idle_policy=values['plan.json']['policy']
+        self.self_container=next((node['container']['id']
+            for node in values['bindings.json'].get('nodes',{}).values()
+            if isinstance(node.get('container'),dict) and node['container'].get('self') is True),None)
         self.service_id='svc-'+digest([self.task_id,bundle_digest])[:32]
         slots={g['node'] for g in values['compiled.json']['topology']['groups'].values()}
         if set(nodes)!=slots or any(node.guard.owner['task_id']!=self.task_id for node in nodes.values()):
@@ -102,7 +105,8 @@ class OwnedExecutor:
             plan,bound=owned_eval_inputs(values['plan.json'],values['bindings.json'],self.service())
             try:
                 result=self.evaluator(plan,bound,command['case_id'],folder/'benchmark',cancelled,
-                                      verified_local_host=self.verified_tester_host)
+                                      verified_local_host=self.verified_tester_host,
+                                      verified_local_container=self.self_container)
                 result=evaluation_result(result,task_id=self.task_id,operation_id=operation,
                     service_id=self.service_id,case_id=command['case_id'])
                 result['ownership']='owned'

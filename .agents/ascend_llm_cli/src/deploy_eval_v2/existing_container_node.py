@@ -251,7 +251,7 @@ class ExistingContainerNode(DockerNode):
                 npu = [r for r in payload['resources'] if r.startswith('npu:')]
                 ports = [int(r.split(':', 1)[1]) for r in payload['resources'] if r.startswith('tcp:')]
                 if npu:
-                    resource_results = verify_resources_absent(npu, self.runner, deadline)
+                    resource_results = self._verify_resources_absent(npu, deadline)
                     verified = all(item['status'] == 'ABSENT_VERIFIED' for item in resource_results)
                 free = self._probe_ports(self.container['id'], ports, deadline,
                                          busy_error=False)
@@ -271,6 +271,9 @@ class ExistingContainerNode(DockerNode):
             return dict(cleanup_status=report['cleanup_status'],
                         claims_released=report['claims_released'], evidence_sha256=digest(report))
         return self.guard.command(command_id, payload, action)
+
+    def _verify_resources_absent(self, resources, deadline):
+        return verify_resources_absent(resources, self.runner, deadline)
 
     def _stop_groups(self, cid, deadline):
         seconds = remaining(deadline)

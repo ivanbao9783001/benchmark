@@ -5,7 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
-from deploy_eval_v2.evaluate import prepare_case
+from deploy_eval_v2.evaluate import prepare_case, select_runner
 from deploy_eval_v2.plan_model import normalize_external_plan
 from deploy_eval_v2.process_guard import run_logged, Cancelled
 from deploy_eval_v2.protocol import ProtocolError
@@ -106,3 +106,32 @@ class EvaluateTests(unittest.TestCase):
                     run_logged(argv, Path(root)/'cancel.log', time.monotonic()+5, cancelled)
             finally:
                 timer.join()
+
+
+class RunnerSelectionTests(unittest.TestCase):
+    def test_self_tester_runs_locally_without_docker(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as root:
+            root=Path(root); tool=root/'ais_bench'; tool.touch()
+            tester=dict(container=dict(id='c'*64),python=sys.executable,
+                        aisbench=str(tool),model_path=str(root))
+            with patch('deploy_eval_v2.container_tester.ContainerTester') as docker:
+                self.assertIs(select_runner(tester,root,time.monotonic()+60,'c'*64),run_logged)
+            docker.assert_not_called()
+
+    def test_self_mode_rejects_a_different_container(self):
+        tester=dict(container=dict(id='d'*64),aisbench='unused',model_path='unused')
+        with self.assertRaisesRegex(ProtocolError,'tester container must be the control container'):
+            select_runner(tester,Path('.'),time.monotonic()+60,'c'*64)
+
+    def test_other_containers_still_use_docker(self):
+        from unittest.mock import patch
+        tester=dict(container=dict(id='d'*64),aisbench='unused',model_path='unused')
+        with patch('deploy_eval_v2.container_tester.ContainerTester') as docker:
+            self.assertIs(select_runner(tester,Path('.'),time.monotonic()+60,None),
+                          docker.return_value.run)
+
+    def test_local_tester_needs_real_assets(self):
+        with self.assertRaisesRegex(ProtocolError,'AISBench or tokenizer assets unavailable'):
+            select_runner(dict(aisbench='/missing/tool',model_path='/missing/model'),
+                          Path('.'),time.monotonic()+60,None)
