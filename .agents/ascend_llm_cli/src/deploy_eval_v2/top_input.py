@@ -3,6 +3,7 @@
 规则与技能文档 `.agents/skills/ascend-llm-router/references/top-input/` 保持一致：
 本模块是唯一实现，测试与 dispatch kit 都调用它，不在别处复制规则。
 """
+import posixpath
 import re
 
 TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
@@ -26,6 +27,13 @@ def _issue(issues, code, path, message):
 
 def _path(value):
     return isinstance(value, str) and value.startswith("/")
+
+
+def _within(path, root):
+    """path 等于 root 或位于 root 之下；规范化后再比较，避免 /a/../b 绕过。"""
+    target = posixpath.normpath(path)
+    base = posixpath.normpath(root)
+    return target == base or target.startswith(base.rstrip("/") + "/")
 
 
 def _container(node):
@@ -104,6 +112,8 @@ def validate(data):
         if not isinstance(node, dict):
             _issue(issues, "NODE_NOT_OBJECT", base, "必须是对象")
             continue
+        if not isinstance(node.get("host"), str) or not node["host"]:
+            _issue(issues, "HOST", base + ".host", "必填；self 节点填本机 hostname 或 IP")
         if not _path(node.get("allowed_root")):
             _issue(issues, "ALLOWED_ROOT", base + ".allowed_root", "必须是 POSIX 绝对路径")
         if action in DEPLOY_ACTIONS:
@@ -183,6 +193,13 @@ def validate(data):
         _issue(issues, "LOCAL_DIR", "deliverables.local_dir", "必须是 POSIX 绝对路径")
     elif isinstance(task_id, str) and local_dir.rstrip("/").endswith("/" + task_id):
         _issue(issues, "LOCAL_DIR", "deliverables.local_dir", "必须是父目录，不含 task.id")
+    if _path(local_dir):
+        for node in nodes.values():
+            root = node.get("allowed_root") if isinstance(node, dict) else None
+            if _path(root) and _within(local_dir, root):
+                _issue(issues, "LOCAL_DIR_IN_ALLOWED_ROOT", "deliverables.local_dir",
+                       "不得等于或位于 allowed_root 内；allowed_root 只承载节点运行根")
+                break
     if not isinstance(data.get("constraints"), list):
         _issue(issues, "CONSTRAINTS", "constraints", "必须是数组")
 
@@ -329,6 +346,9 @@ def _validate_evaluation(data, task, nodes, issues):
         _issue(issues, "TESTER_FIELD", "evaluation.tester.work_root", "必须是 POSIX 绝对路径")
     if not _path(tester.get("model_path")):
         _issue(issues, "TESTER_FIELD", "evaluation.tester.model_path", "必须是 POSIX 绝对路径")
+    if not isinstance(tester.get("machine_id"), str) or not re.fullmatch(r"[a-f0-9]{32}", tester["machine_id"]):
+        _issue(issues, "TESTER_MACHINE_ID", "evaluation.tester.machine_id",
+               "必须是 32 位小写十六进制机器码，现场取证后写回")
     if "host_python" in tester and not _path(tester["host_python"]):
         _issue(issues, "TESTER_FIELD", "evaluation.tester.host_python", "必须是 POSIX 绝对路径")
     datasets = tester.get("datasets")

@@ -15,7 +15,7 @@ description: Deploy and Eval v2 的服务测试规划、结果证据分析与阶
 
 精度 case（`mode=acc`）与性能 case 同级：绑定 `type=aisbench_task` 的 `gpqa_gen_0_shot_str`，目录须含 `gpqa_diamond.csv` 且为全量 198 题；不设 `test_range`、不支持子集、不做缓存重置或指标采集。命令为 `<aisbench> <config> --mode all --work-dir <case>/outputs`，只转发 AISBench 评测器返回的百分制 `accuracy`，并核验 predictions 198 行、results JSON、infer/eval 日志与 summary；日志或 summary 缺失时 `accuracy_validity=UNVERIFIED`，但保留原值。
 
-分析时分别给出 execution_status、evidence_status，以及按 `evaluation_type` 选择的 performance_validity 或 accuracy_validity。性能分支检查 AISBench 退出码、预期模型×数据集结果组、请求数量/成功状态、worker 日志和稳态窗口；精度分支检查预测行数、原生 results 与日志存在性。请求完成但没有有效稳态窗口可为 SUCCEEDED + UNVERIFIED；未知指标不填零。
+分析时分别给出 execution_status、evidence_status，以及按 `evaluation_type` 选择的 performance_validity 或 accuracy_validity。性能分支检查 AISBench 退出码、预期模型×数据集结果组、请求数量/成功状态、worker 日志和稳态窗口；精度分支检查预测行数、原生 results、日志存在性，以及输出截断率（达到 max_out_len 的样本占比）。请求完成但没有有效稳态窗口可为 SUCCEEDED + UNVERIFIED；未知指标不填零。
 
 evaluation.completed 仅表示阶段结束。按结果决定下一 case 或收尾，不在子技能内递归调用 deploy。测试失败先核验自有客户端清理，服务处理遵循冻结策略；外部服务始终不随测试失败释放。交付结果引用、实际负载、证据状态和限制，不粘贴完整日志。
 

@@ -188,6 +188,13 @@ class TopInputDocTest(unittest.TestCase):
         for name in ("contract.md", "derivation.md", "validation.md"):
             self.assertTrue((TOP_DIR / name).is_file(), name)
 
+    def test_derived_defaults_must_be_written_back(self):
+        derivation = (TOP_DIR / "derivation.md").read_text(encoding="utf-8")
+        self.assertIn("写回 top_input", derivation)
+        self.assertIn("不读缺省", self.doc)
+        for field in ("guard_root", "on_idle", "authorization", "deliverables.local_dir"):
+            self.assertIn(field, derivation)
+
     def test_section_2_links_resolve(self):
         section = self.doc.split("## 2.", 1)[1].split("## 3.", 1)[0]
         links = re.findall(r"\]\(([^)#]+)\)", section)
@@ -495,6 +502,66 @@ class TopInputValidatorTest(unittest.TestCase):
         codes = self.codes(mutate)
         self.assertIn("SCHEMA_VERSION", codes)
         self.assertIn("ACTION", codes)
+
+
+class TopInputCompletenessTest(unittest.TestCase):
+    """校验不读缺省：派单方可省的字段必须先写回具体值，缺失即缺口。"""
+
+    def setUp(self):
+        source = (EXAMPLES / "colocated-existing-deploy-eval-acc.json").read_text(encoding="utf-8")
+        self.example = json.loads(source)
+
+    def codes(self, mutate):
+        data = json.loads(json.dumps(self.example))
+        mutate(data)
+        return {issue["code"] for issue in validate_top_input(data)["issues"]}
+
+    def test_missing_guard_root_is_a_gap(self):
+        self.assertIn("GUARD_ROOT", self.codes(lambda data: data["nodes"]["n1"].pop("guard_root")))
+
+    def test_missing_node_python_is_a_gap(self):
+        self.assertIn("NODE_PYTHON", self.codes(lambda data: data["nodes"]["n1"].pop("python")))
+
+    def test_missing_node_host_is_a_gap(self):
+        self.assertIn("HOST", self.codes(lambda data: data["nodes"]["n1"].pop("host")))
+
+    def test_authorization_requires_both_keys(self):
+        self.assertIn("AUTHORIZATION", self.codes(
+            lambda data: data["nodes"]["n1"]["authorization"].pop("create_work_root")))
+
+    def test_missing_on_idle_is_a_gap(self):
+        self.assertIn("ON_IDLE", self.codes(lambda data: data["task"].pop("on_idle")))
+
+    def test_missing_local_dir_is_a_gap(self):
+        self.assertIn("LOCAL_DIR", self.codes(lambda data: data.pop("deliverables")))
+
+    def test_local_dir_must_be_the_parent_of_task_root(self):
+        def mutate(data):
+            data["deliverables"]["local_dir"] += "/" + data["task"]["id"]
+        self.assertIn("LOCAL_DIR", self.codes(mutate))
+
+    def test_local_dir_must_not_live_under_allowed_root(self):
+        self.assertIn("LOCAL_DIR_IN_ALLOWED_ROOT", self.codes(
+            lambda data: data["deliverables"].update(
+                local_dir=data["nodes"]["n1"]["allowed_root"] + "/deliverables")))
+
+    def test_local_dir_must_not_equal_allowed_root(self):
+        self.assertIn("LOCAL_DIR_IN_ALLOWED_ROOT", self.codes(
+            lambda data: data["deliverables"].update(
+                local_dir=data["nodes"]["n1"]["allowed_root"])))
+
+    def test_local_dir_is_normalized_before_comparison(self):
+        self.assertIn("LOCAL_DIR_IN_ALLOWED_ROOT", self.codes(
+            lambda data: data["deliverables"].update(
+                local_dir=data["nodes"]["n1"]["allowed_root"] + "/../work/deliverables")))
+
+    def test_tester_machine_id_is_required(self):
+        self.assertIn("TESTER_MACHINE_ID", self.codes(
+            lambda data: data["evaluation"]["tester"].pop("machine_id")))
+
+    def test_tester_machine_id_must_be_32_hex(self):
+        self.assertIn("TESTER_MACHINE_ID", self.codes(
+            lambda data: data["evaluation"]["tester"].update(machine_id="not-a-machine-id")))
 
 
 if __name__ == "__main__":

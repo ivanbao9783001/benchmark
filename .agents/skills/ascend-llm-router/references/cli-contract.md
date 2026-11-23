@@ -13,15 +13,20 @@
 | freeze-inputs | plan, bindings, review, destination, runtime_sha256 | review 为已审阅文件路径；返回 input_bundle.path 与 input_bundle.sha256，后者作为 bundle_sha256 |
 | verify-inputs | directory, sha256, runtime_sha256 | directory 为冻结目录，sha256 为 input_bundle.sha256；只校验，不修改冻结输入 |
 | check-ready | task_ref, runtime_archive, input_directory, runtime_sha256, bundle_sha256 | 需要 --config CONTROL；仅本地可执行性检查，不代表现场预检成功 |
-| publish-task | task_ref, runtime_archive, input_directory, runtime_sha256, bundle_sha256 | 需要 --config CONTROL；发布包到授权任务目录，不能预先用其他文件占据该目录 |
+| publish-task | task_ref, runtime_archive, input_directory, runtime_sha256, bundle_sha256 | 需要 --config CONTROL；发布包到授权节点运行根，不能预先用其他文件占据该目录 |
 | start-task | task_ref, runtime_sha256, bundle_sha256, nonce | 需要 --config CONTROL；两项摘要和 nonce 都必须是64位小写十六进制字符串（正则[a-f0-9]{64}）；nonce 一次生成并保存，未知结果先查询，不更换身份盲目重试 |
 | stop-runtime | task_ref, nonce | 需要 --config CONTROL；使用原启动 nonce，仅停止已允许收尾的框架进程，不替代服务释放 |
 
-任务根固定为 `<deliverables.local_dir>/<task.id>`（下文记作 `<root>`）：`control.json`、`requests/`、`contracts/`、`runtime/`、`frozen/`、`review-draft/`、`evidence/`、`agent-output/` 都在其下。
+任务目录分两棵树，职责互斥：
+
+- 交付根 `task_root = <deliverables.local_dir>/<task.id>`，只在控制机：`control.json`、`requests/`、`contracts/`、`runtime.zip`、`frozen/`、`review-draft/`、`evidence/`、`agent-output/`、`results/`（摘要）、`FINAL-REPORT.md`。
+- 节点运行根 `node_root = <allowed_root>/<task.id>`，每个节点一份：`runtime/`、`inputs/`、`.runtime/`、`.incoming/`、`scripts/`、`logs/`、`results/`（原始）、`task.jsonl`、`state.json`、`service.json`。existing 模式下容器运行根为 `container_root = <container_work_root>/<task.id>`，脚本/日志/原始 results 在其下，`node_root` 只保留状态与可回传产物。
+
+下文 `<root>` 一律指 `task_root`；原始证据只能从 `node_root`/`container_root` 经 `read-result` 读取。
 
 `validate-top-input --request <top_input.json>` 在进入 plan 前校验派单契约：不读 `--config`、不连接现场，返回 `{valid, scenario, issues[]}`；退出码 2 表示存在缺口。
 
-例如 package-runtime 的请求文件内容为 `{"destination":"<root>/runtime.zip"}`。所有 `destination` 必须指向该根内的新文件或新目录，不得写到仓库根、当前目录或任意临时路径。准备顺序为打包、审阅、冻结、check-ready，再由对应阶段技能发布与启动。destination 使用未存在的新文件或目录（类型按表）；冻结后不手工修改内容。prepare-inputs/export-contracts 见下文及 plan 技能。control.json 的任务键、冻结 plan.task_id 和 task_ref 必须一致。
+例如 package-runtime 的请求文件内容为 `{"destination":"<root>/runtime.zip"}`。所有 `destination` 必须指向该根内的新文件或新目录，不得写到仓库根、当前目录或任意临时路径。准备顺序为打包、审阅、冻结、check-ready，再由对应阶段技能发布与启动。destination 使用未存在的新文件或目录（类型按表）；冻结后不手工修改内容。`runtime_archive` 与 `input_directory` 必须位于 `task_root` 内，跨目录即视为输入缺口。prepare-inputs/export-contracts 见下文及 plan 技能。control.json 的任务键、冻结 plan.task_id 和 task_ref 必须一致。
 
 nonce 是启动身份随机值，不是摘要计算结果，也不是32位GUID；可用控制端 Python `secrets.token_hex(32)` 生成64位值，保存到请求后始终复用。`INVALID_INPUT: startup digest` 表示 runtime_sha256、bundle_sha256 或 nonce 中至少一项格式不符合上述契约；不能因此把已发布包推断为已启动。对未知启动结果仍按身份与持久回执查询，禁止换nonce盲重试。
 
@@ -29,7 +34,7 @@ Production execution is guarded and implemented. Freeze validates schemas, seman
 
 For a model-free Linux socket run use socket-start, documented in socket-validation.md. This explicitly simulates stages; the Agent must submit each subsequent phase itself through the normal CLI.
 
-以下命令均在任务根内执行，文件名相对该根；`--config` 固定使用任务根的 `control.json`：
+以下命令均在交付根 `task_root` 内执行，文件名相对该根；`--config` 固定使用 `task_root/control.json`：
 
 ```text
 python -m deploy_eval_v2 --config control.json deploy --request requests/deploy.json
@@ -41,7 +46,7 @@ python -m deploy_eval_v2 --config control.json wait-event --task-ref task-1 --af
 python -m deploy_eval_v2 --config control.json read-result --task-ref task-1 --artifact-ref task.jsonl --offset 0 --max-bytes 8192
 ```
 
-control.json 是受信控制端配置，固定位于任务根：tasks 下以 task_ref 为键，值包含 host、root、allowed_root 和可选 python。root 必须位于 allowed_root 内且不能等于它。配置不含密码。需要发布测试端时，在任务条目下加 `tester`，键名为 `host`、`root`（测试端任务根，取 `work_root/task.id`）和可选 `python`；与 tasks 条目同形，但不写 `allowed_root`。同机测试且 tester 与任务根一致时可省略该段。
+control.json 是受信控制端配置，固定位于交付根 `task_root/control.json`：tasks 下以 task_ref 为键，值包含 `host`、`root`（节点运行根 `node_root`）、`allowed_root`、`task_root`（交付根）和可选 `python`。`root` 必须位于 `allowed_root` 内且不能等于它；`task_root` 必须是绝对路径，末段等于 task_ref，且不能等于或位于该任务的 `root` 内。旧版 control.json（无 `task_root`）与旧 launch identity（`task_root` 键）不兼容，升级后按新契约重写，不混用。配置不含密码。需要发布测试端时，在任务条目下加 `tester`，键名为 `host`、`root`（测试端运行根，取 `work_root/task.id`）和可选 `python`；与 tasks 条目同形，但不写 `allowed_root` 与 `task_root`。同机测试且 tester 与任务运行根一致时可省略该段。
 
 当控制端本身运行在该任务的借用容器内（`bindings.nodes.<n>.container.self=true`）时，任务条目额外写 `self: true`。该条目的 publish-task、start-task、stop-runtime 与所有查询改在本地执行，不再调用 ssh；check-ready 只有在存在非 self 目标时才要求 ssh，并额外校验 self 节点唯一、等于控制节点、控制机 `/etc/machine-id` 等于该节点 `machine_id`。runtime 侧通过 `/.dockerenv` 自证处于容器内，缺失即失败。
 
@@ -61,7 +66,7 @@ control.json 是受信控制端配置，固定位于任务根：tasks 下以 tas
 
 退出码已实现：输入/状态错误 2、通信未知 3、确认操作失败 4；退出码 0 只表示成功提交/查询/等待，业务成败仍以事件为准。
 
-普通响应预算 8 KiB、每页最多 10 关键事件；日志默认 8 KiB，显式最多 32 KiB，包含 JSON 转义与元数据。先按 artifact_ref 读取一次所需片段，再按 next_offset 续读；不从 SSH 获取整份服务日志。定位支持互斥的 --tail-bytes N、--line-start N --line-end M、--keyword TEXT；按返回的扫描游标续读。task.jsonl 为统一框架日志，service.json 为部署交接；results/ 与 logs/ 下只读相应证据，禁止目录遍历。
+普通响应预算 8 KiB、每页最多 10 关键事件；日志默认 8 KiB，显式最多 32 KiB，包含 JSON 转义与元数据。先按 artifact_ref 读取一次所需片段，再按 next_offset 续读；不从 SSH 获取整份服务日志。定位支持互斥的 --tail-bytes N、--line-start N --line-end M、--keyword TEXT；按返回的扫描游标续读。task.jsonl 为统一框架日志，service.json 为部署交接；results/ 与 logs/ 下只读相应证据，禁止目录遍历。它们都在节点运行根 `node_root`（existing 模式的原生产物在 `container_root`），交付根的 `results/` 只放摘要与引用。
 # Task cancellation clarification
 
 `scope=operation` requires the exact active `operation_id`. `scope=task` may omit
@@ -72,4 +77,4 @@ must be checked. Acceptance is not evidence of resource release.
 
 本地业务输入：`prepare-inputs --request task.json`（详见 plan 技能）返回 plan/bindings 路径及待审阅默认值；`export-contracts --request export.json` 导出与 CLI 同版本的权威 JSON Schema。新日志布局仅用于新任务，不用新包接管历史冻结任务。远端日志归集未完成时 task.jsonl 记录 remote.log.pending，不能声称日志完整；原生服务/AISBench 日志保持原位。
 
-当前 CLI：原子JSON产物采用与事件摘要相同的规范序列化，expected-sha256验证文件字节；不改旧包旧产物。read-result在runtime socket不可用时，可核对持久任务身份后只读本任务受限路径的产物；不恢复执行、不改变状态或授权其他任务。停机后仍按offset/next_offset有界取回日志，并独立核验完整性。
+当前 CLI：原子JSON产物采用与事件摘要相同的规范序列化，expected-sha256验证文件字节；不改旧包旧产物。read-result在runtime socket不可用时，可核对持久任务身份后只读本任务节点运行根的受限路径产物；不恢复执行、不改变状态或授权其他任务。停机后仍按offset/next_offset有界取回日志，并独立核验完整性。

@@ -18,7 +18,7 @@ class ReadinessTests(unittest.TestCase):
                 'compiled.json':{'topology':{'groups':{'a/model':dict(node='a',host='host-a',root='/work/t')}}}}
         request=dict(task_ref='t',runtime_archive='unused.zip',input_directory='unused',
                      runtime_sha256='c'*64,bundle_sha256='d'*64)
-        config={'tasks':{'t':dict(host='host-a',root='/work/t',allowed_root='/work',
+        config={'tasks':{'t':dict(host='host-a',root='/work/t',allowed_root='/work',task_root='/tmp/delivery/t',
                                 tester=dict(host='tester-host',root='/test/t',allowed_root='/test'))}}
         with patch('deploy_eval_v2.readiness.verify_frozen',return_value=values),\
              patch('deploy_eval_v2.readiness.install_archive'),\
@@ -38,7 +38,7 @@ class ReadinessTests(unittest.TestCase):
                 'compiled.json':{'topology':{'groups':{'a/model':dict(node='a',host='host-a',root='/work/t')}}}}
         request=dict(task_ref='t',runtime_archive='unused.zip',input_directory='unused',
                      runtime_sha256='c'*64,bundle_sha256='d'*64)
-        config={'tasks':{'t':dict(host='host-a',root='/work/t',allowed_root='/work',self=True)}}
+        config={'tasks':{'t':dict(host='host-a',root='/work/t',allowed_root='/work',task_root='/tmp/delivery/t',self=True)}}
         with patch('deploy_eval_v2.readiness.verify_frozen',return_value=values),\
              patch('deploy_eval_v2.readiness.install_archive'),\
              patch('deploy_eval_v2.readiness.shutil.which',return_value=None),\
@@ -67,7 +67,7 @@ class ReadinessTests(unittest.TestCase):
                 'compiled.json':{'topology':{'groups':{'a/model':dict(node='a',host='host-a',root='/work/t')}}}}
         request=dict(task_ref='t',runtime_archive='unused.zip',input_directory='unused',
                      runtime_sha256='c'*64,bundle_sha256='d'*64)
-        config={'tasks':{'t':dict(host='host-a',root='/work/t',allowed_root='/work',self=True)}}
+        config={'tasks':{'t':dict(host='host-a',root='/work/t',allowed_root='/work',task_root='/tmp/delivery/t',self=True)}}
         with patch('deploy_eval_v2.readiness.verify_frozen',return_value=values),\
              patch('deploy_eval_v2.readiness.install_archive'),\
              patch('deploy_eval_v2.readiness.shutil.which',return_value=None),\
@@ -96,7 +96,7 @@ class ReadinessTests(unittest.TestCase):
                 frozen=freeze_inputs(root/'inputs',plan,bindings,review,runtime)
                 request=dict(task_ref='t',runtime_archive=str(root/'runtime.zip'),input_directory=str(root/'inputs'),
                              runtime_sha256=runtime,bundle_sha256=frozen['sha256'])
-                config={'tasks':{'t':dict(host='example.invalid',root='/work/t',allowed_root='/work')}}
+                config={'tasks':{'t':dict(host='example.invalid',root='/work/t',allowed_root='/work',task_root=str(root/'t'))}}
                 with patch('deploy_eval_v2.readiness.shutil.which',return_value='/ssh'):
                     result=check_ready(request,config)
                 self.assertEqual(result['readiness']['status'],'READY_FOR_HOST_PREFLIGHT' if attested else 'BLOCKED')

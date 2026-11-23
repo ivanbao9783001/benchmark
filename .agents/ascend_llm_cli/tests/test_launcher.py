@@ -1,10 +1,11 @@
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from deploy_eval_v2.launcher import launch_argv,ensure_started
 from deploy_eval_v2.protocol import ProtocolError
 
 def identity():
-    return dict(protocol_version='1.0',task_id='t',task_root='/work/t',runtime_sha256='a'*64,bundle_sha256='b'*64,nonce='c'*64)
+    return dict(protocol_version='1.0',task_id='t',node_root='/work/t',runtime_sha256='a'*64,bundle_sha256='b'*64,nonce='c'*64)
 
 class LauncherTests(unittest.TestCase):
     def test_direct_python_argv(self):
@@ -18,3 +19,12 @@ class LauncherTests(unittest.TestCase):
             with self.assertRaisesRegex(ProtocolError,'prior launch'):
                 ensure_started(identity(),'/python','/work/t/identity.json',fake=True,allow_start=False)
             spawn.assert_not_called()
+
+    def test_runtime_process_uses_node_root_as_cwd(self):
+        evidence=dict(pid=11,session=11)
+        with patch('pathlib.Path.exists',return_value=False),\
+             patch('deploy_eval_v2.launcher.spawn_owned',return_value=evidence) as spawn,\
+             patch('deploy_eval_v2.launcher.process_identity',return_value=evidence),\
+             patch('deploy_eval_v2.process_io.probe_identity',return_value=dict(identity=identity(),pid=11)):
+            ensure_started(identity(),'/python','/work/t/identity.json',fake=True)
+        self.assertEqual(Path(spawn.call_args.kwargs['cwd']),Path('/work/t'))

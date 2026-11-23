@@ -28,11 +28,23 @@ RUNNING 按游标等待；WAIT_TIMEOUT 不代表失败。结果未知时恢复�
 
 ### 执行前的输入核对
 
-拿到 top_input 后先核对运行时模式与任务形态，再核对字段。派单方（上层主 Agent 或人）如何收齐事实、如何发 prompt，见 [dispatch-kit/README.md](../../dispatch-kit/README.md)；执行方不替派单方补事实，也不把示例值当授权。判不出容器归属时停止并报告缺口，不自行创建容器。
+拿到 top_input 后先核对运行时模式与任务形态，再核对字段。派单方（上层主 Agent 或人）如何收齐事实、如何发 prompt，见 [dispatch-kit/README.md](../../dispatch-kit/README.md)；执行方不把示例值当授权，也不把示例值当现场事实。判不出容器归属时停止并报告缺口，不自行创建容器。
+
+派单信息按来源分三类，处理方式不同：
+
+- **授权与目标**：谁能做、做什么、边界在哪。只能来自派单方；缺失时一次性列全并停止，这是唯一允许向用户提问的类别。
+- **现场事实**：容器 id 与 image、`network`、`machine_id`、解释器、模型与数据集路径、端口占用。由执行方在容器内或经授权的 SSH 取证后写入，不问。
+- **可推导项**：`task.id`、`root`（节点运行根）、`task_root`（交付根）、bindings、端口分配、`container_work_root`、`deliverables.local_dir`、数据集 `split/scope`、acc 的数据集 id（模板固定 `gpqa`）、case 参数。按派生表与模板默认值直接采用，不问。
+
+后两类的取值来源写入审阅摘要与最终报告的 `limitations`；不得列入缺口清单或 `unresolved`。
 
 **先定运行时模式（owned / existing），再定任务形态（action / topology / eval_mode）。** `container.self` 只是 existing 的节点标记（当前所在容器），不是第三种模式；单机 existing 直接在容器内本地执行，双机 PD 只有当前节点写 `self`，另一节点经 SSH + docker。两个判定问题、必填差异与停止规则见派单契约 §0；判不出容器归属就停，不自行创建容器，也不得把 owned 硬套成 existing。`scenarios.json` 只是已有示例的索引，不是支持范围的全部；没有示例的路由按派单契约 §2 与字段契约组装，不得因为找不到示例而改判运行时模式。
 
-提交前用 `validate-top-input` 核对必填字段，缺失时一次性列出全部缺口并交回派单方，不进入 plan。`control.json` 是阶段产物，不作为独立入口。节点投影、`task.id` 与 `root` 派生、事实值只核验不重选、示例只示范结构等规则，以 [派单契约](references/top-input.md)、[字段契约](references/top-input/contract.md) 与 [派生表](references/top-input/derivation.md) 为准，本文件不重述。
+提交前用 `validate-top-input` 核对必填字段。先用现场事实与派生项补齐并重跑；只有授权与目标类缺口才一次性列出并交回派单方、不进入 plan。`control.json` 是阶段产物，不作为独立入口。节点投影、`task.id` 与 `root` 派生、事实值只核验不重选、示例只示范结构等规则，以 [派单契约](references/top-input.md)、[字段契约](references/top-input/contract.md) 与 [派生表](references/top-input/derivation.md) 为准，本文件不重述。
+
+### 阻断态的落盘边界
+
+输入核对判定为缺口，或目标目录/可写根不可写而停止时，不得创建任何交付根或运行根（`deliverables.local_dir/<task.id>`、`allowed_root/<task.id>`）。只允许把最小证据写到已有 `guard_root` 下的 `work/<task.id>-preflight`；没有 `guard_root` 时用显式临时目录，并在结论中标注为非正式产物。不得改写 `local_dir`、不得借用任一节点的 `allowed_root` 顶替；多节点时节点侧同样不建运行根。
 
 ## 阶段边界驱动的技能加载
 

@@ -71,7 +71,7 @@
 - 不支持 `gpqa_gen_0_shot_cot_chat_prompt`、`gpqa_ppl_0_shot_str`。
 - 不支持 lm-eval-harness、LLM-as-judge、多轮、主观题。
 - 不做 baseline 对比、阈值判定、通过/失败门禁、趋势报表。
-- 不自动把 AISBench 产物回传协调器；保留在 tester 的任务目录。
+- 不自动把 AISBench 产物回传协调器；保留在 tester 的节点运行根。
 - 不修改 AISBench 安装目录里的 `configs/`（smoke 的 `cp -r configs` 做法不复用）。
 - 不为精度开启缓存重置、指标采集、合成数据 postflight。
 

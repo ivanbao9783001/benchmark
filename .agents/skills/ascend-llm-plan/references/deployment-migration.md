@@ -34,7 +34,7 @@ nodes[slot].mount_profiles 的 ascend-runtime 展开为 /usr/local/Ascend/driver
 
 proxy实例不占设备。launch.proxy_program_key指向nodes[slot].paths中的代理文件键（默认proxy_program）。编译器从connections.routing和各实例绑定生成--host、--port、--prefiller-hosts/ports、--decoder-hosts/ports；这些参数不得再写入proxy.launch.args。workers、重试等其余参考参数需保留在args，参考source/unset保留bootstrap。P_IP/D_IP及P_HTTP_PORT/D_HTTP_PORT由路由引用的实例绑定表示，不支持跨实例{{ports.other.http}}语法。
 
-用户提供的proxy.py若现场不存在，可在授权工作根中的本轮独立assets目录用文件传输发布原文件并核验本地/远端SHA256，将该绝对路径记入paths和只读mounts。这是部署输入准备，不是启动旁路；不要直接运行参考脚本或手工拉起模型。任务根本身保留给publish-task，避免预先填入文件导致发布冲突。镜像/权重/通信目录与用户资产的挂载都须在bindings明确记录；comm/hixl路径不能从历史现场推断。
+用户提供的proxy.py若现场不存在，可在授权工作根中的本轮独立assets目录用文件传输发布原文件并核验本地/远端SHA256，将该绝对路径记入paths和只读mounts。这是部署输入准备，不是启动旁路；不要直接运行参考脚本或手工拉起模型。节点运行根本身保留给publish-task，避免预先填入文件导致发布冲突；交付根只放请求、冻结与证据，不参与发布。镜像/权重/通信目录与用户资产的挂载都须在bindings明确记录；comm/hixl路径不能从历史现场推断。
 
 先按上述规则形成完整plan/bindings，再draft-review、freeze-inputs、check-ready；核对冻结编译产物中的实际argv、env、bootstrap、设备、挂载、端口及参考差异。部署+评测可以使用deploy-plan的evaluation与deploy-bindings的testers；prepare-inputs的stage=deploy专供只部署，拒绝内嵌评测。是否收到deployment.ready后进入eval由用户意图和router交接决定。
 

@@ -1,5 +1,5 @@
 """JSON-file CLI contracts for runtime packaging and task publication."""
-from pathlib import Path,PurePosixPath
+from pathlib import Path,PurePath,PurePosixPath
 import re
 import tempfile
 from .compiler import verify_frozen
@@ -11,16 +11,33 @@ from .ssh_publication import probe_guard_root,publish_task
 from .ssh_transport import exchange,host_argv
 
 
-def task_binding(config,task):
+def task_binding(config,task,*,delivery=False):
     if not isinstance(task,str) or not re.fullmatch('[A-Za-z0-9][A-Za-z0-9_-]{0,63}',task):
         raise ProtocolError('INVALID_INPUT: task identity')
+    if (not isinstance(config,dict) or not isinstance(config.get('tasks'),dict)
+            or task not in config['tasks'] or not isinstance(config['tasks'][task],dict)):
+        raise ProtocolError('INVALID_INPUT: task binding')
     binding=config['tasks'][task]
     root,allowed=PurePosixPath(binding['root']),PurePosixPath(binding['allowed_root'])
     if (not allowed.is_absolute() or '..' in allowed.parts or not root.is_absolute() or
             '..' in root.parts or root==allowed or not root.is_relative_to(allowed) or
             any(c in str(root) for c in '\x00\r\n\\')):
         raise ProtocolError('INVALID_INPUT: task root')
+    if delivery:
+        task_delivery_root(binding,task,root)
     return binding
+
+
+def task_delivery_root(binding,task,node_root):
+    """Validate the control-side delivery root; it never equals or contains node_root."""
+    value=binding.get('task_root')
+    if not isinstance(value,str) or not 1<=len(value)<=4096 or '\x00' in value or '\n' in value or '\r' in value:
+        raise ProtocolError('INVALID_INPUT: task delivery root')
+    path=PurePosixPath(value) if value.startswith('/') else PurePath(value)
+    if (not path.is_absolute() or '..' in path.parts or path.name!=task
+            or path==node_root or path.is_relative_to(node_root) or node_root.is_relative_to(path)):
+        raise ProtocolError('INVALID_INPUT: task delivery root')
+    return path
 
 
 def package_runtime(request):
@@ -83,7 +100,7 @@ def publish(request,config,*,publisher=publish_task,prober=probe_guard_root):
         if not re.fullmatch('[a-f0-9]{64}',request[key]):
             raise ProtocolError('INVALID_INPUT: publication digest')
     task=request['task_ref']
-    binding=task_binding(config,task)
+    binding=task_binding(config,task,delivery=True)
     values=verify_frozen(request['input_directory'],request['bundle_sha256'],request['runtime_sha256'])
     if values['plan.json'].get('task_id')!=task:
         raise ProtocolError('INVALID_INPUT: publication task mismatch')
@@ -134,7 +151,7 @@ def start_task(request,config,*,transport=exchange):
     for key in fields-{'task_ref'}:
         if not isinstance(request[key],str) or not re.fullmatch('[a-f0-9]{64}',request[key]):
             raise ProtocolError('INVALID_INPUT: startup digest')
-    binding=task_binding(config,request['task_ref'])
+    binding=task_binding(config,request['task_ref'],delivery=True)
     root=binding['root']
     python=binding.get('python','/usr/bin/python3')
     if not isinstance(python,str) or not python.startswith('/'):

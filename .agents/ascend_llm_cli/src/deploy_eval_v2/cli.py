@@ -107,7 +107,7 @@ def main(argv=None):
             request.update(task_id=task, protocol_version='1.0')
             validate_query(request)
         from .publication_cli import task_binding
-        binding = task_binding(config,task)
+        binding = task_binding(config,task,delivery=True)
         root = PurePosixPath(binding['root'])
         bootstrap='import sys; sys.path.insert(0, '+repr(str(root)+'/runtime')+'); from deploy_eval_v2.remote_client import main; raise SystemExit(main())'
         remote = [binding.get('python', 'python3'), '-B', '-c', bootstrap, '--root', str(root)]

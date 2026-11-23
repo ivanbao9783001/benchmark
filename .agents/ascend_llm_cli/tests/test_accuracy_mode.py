@@ -49,14 +49,18 @@ def write_gpqa(directory, samples=198, columns=12):
     return path
 
 
-def build_native_run(root, samples=198, accuracy=42.5, success=True, logs=True, summary=True):
+def build_native_run(root, samples=198, accuracy=42.5, success=True, logs=True, summary=True,
+                     output_tokens=None, truncated=0):
     run = Path(root)/'outputs'/'20261118_120000'
     predictions = run/'predictions'/'service'/'gpqa_diamond_0_shot_str.jsonl'
     predictions.parent.mkdir(parents=True)
     with predictions.open('w', encoding='utf-8') as stream:
         for index in range(samples):
-            stream.write(json.dumps(dict(success=success, uuid=str(index), origin_prompt='q',
-                                         prediction='A', gold='A'))+'\n')
+            row = dict(success=success, uuid=str(index), origin_prompt='q',
+                       prediction='A', gold='A')
+            if output_tokens is not None:
+                row['output_tokens'] = output_tokens if index < truncated else 1
+            stream.write(json.dumps(row)+'\n')
     results = run/'results'/'service'/'gpqa_diamond_0_shot_str.json'
     results.parent.mkdir(parents=True)
     results.write_text(json.dumps({'accuracy': accuracy}), encoding='utf-8')
@@ -170,6 +174,38 @@ class AccuracyContractTests(unittest.TestCase):
                 result = inspect_environment(tester, accuracy_plan()['cases'][0])
             self.assertEqual(result['dataset']['samples'], 198)
             imports.assert_called_once_with()
+
+
+class AccuracyTruncationTests(unittest.TestCase):
+    def _measure(self, samples, truncated, limit=512):
+        with tempfile.TemporaryDirectory() as folder:
+            build_native_run(folder, samples=samples, output_tokens=limit, truncated=truncated)
+            dataset = accuracy_dataset(folder)
+            case = dict(max_out_len=limit)
+            validated = accuracy_evidence.validate_accuracy_result(folder, case, dataset)
+            return validated, accuracy_evidence.summarize(folder, case, dataset, validated)
+
+    def test_truncation_at_or_above_five_percent_is_unverified(self):
+        validated, accuracy = self._measure(198, 10)
+        self.assertEqual(validated['truncated_samples'], 10)
+        self.assertGreaterEqual(accuracy['truncation_ratio'], 0.05)
+        self.assertEqual(accuracy['status'], 'UNVERIFIED')
+        self.assertEqual(accuracy['validity_reasons'], ['ACC_OUTPUT_TRUNCATED'])
+        self.assertTrue(accuracy['evidence_complete'])
+
+    def test_truncation_below_five_percent_keeps_verified_with_limitation(self):
+        validated, accuracy = self._measure(198, 9)
+        self.assertEqual(validated['truncated_samples'], 9)
+        self.assertLess(accuracy['truncation_ratio'], 0.05)
+        self.assertEqual(accuracy['status'], 'VERIFIED')
+        self.assertEqual(accuracy['validity_reasons'], [])
+        self.assertEqual(accuracy['limitations'], ['9/198 predictions reached max_out_len=512'])
+
+    def test_no_truncation_has_no_limitation(self):
+        validated, accuracy = self._measure(198, 0)
+        self.assertEqual(validated['truncated_samples'], 0)
+        self.assertEqual(accuracy['status'], 'VERIFIED')
+        self.assertEqual(accuracy['limitations'], [])
 
 
 class AccuracyEvidenceTests(unittest.TestCase):

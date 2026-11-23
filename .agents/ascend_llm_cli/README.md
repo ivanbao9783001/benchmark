@@ -80,12 +80,12 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 
 本地回归运行219项，1项因平台条件跳过。Linux 专用项在不支持 Unix socket 的系统上跳过；本地模拟与原生产物 fixture 不等于模型或 NPU 测试。CLI 的 acceptance=local-only 标签仍保留，不以单一现场功能验收承诺通用生产就绪。
 
-容器 tester（CLI >=0.1.0a8）：绑定 container.id（完整容器 ID）与 container.image（sha256 镜像摘要；`self` 节点可省略，非 self 节点仍须给出）；python/aisbench/model_path/environment 属于容器，host_python 属于宿主框架。复用已有运行容器，只创建任务独立工具目录，不安装依赖或授予容器管理权限。工具预检和负载在容器执行，证据回收到宿主任务目录。
+容器 tester（CLI >=0.1.0a8）：绑定 container.id（完整容器 ID）与 container.image（sha256 镜像摘要；`self` 节点可省略，非 self 节点仍须给出）；python/aisbench/model_path/environment 属于容器，host_python 属于宿主框架。复用已有运行容器，只创建任务独立工具目录，不安装依赖或授予容器管理权限。工具预检和负载在容器执行，证据回收到宿主节点运行根。
 
 ## 宿主绑定与现场预检
 
 节点绑定 `nodes.<slot>` 支持可选 `guard_root`（绝对路径），默认 `/var/lib/deploy-eval-v2/guard`。
-该目录是宿主机全局的资源占用声明与命令日志根，必须由执行用户可写，且不得位于任务目录内；
+该目录是宿主机全局的资源占用声明与命令日志根，必须由执行用户可写，且不得位于节点运行根内；
 无 sudo 的现场应显式绑定到用户可写位置。
 
 `publish-task` 在上传前用 SSH 验证每个部署节点的 guard_root 可创建可写，失败返回

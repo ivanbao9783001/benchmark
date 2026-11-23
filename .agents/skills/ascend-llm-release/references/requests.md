@@ -37,4 +37,4 @@
 deploy-eval-v2 --config <root>/control.json get-status --task-ref <deployment_task_id>
 ```
 
-确认无活动 operation、逐资源结果与 `resource_results_ref` 可读后，再停止 runtime。任务目录、冻结包与结果默认保留，不随容器释放删除。
+确认无活动 operation、逐资源结果与 `resource_results_ref` 可读后，再停止 runtime。交付根与节点运行根、冻结包与结果默认保留，不随容器释放删除。

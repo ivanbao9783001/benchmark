@@ -20,7 +20,7 @@ class ExecutorFactoryTests(unittest.TestCase):
              patch('deploy_eval_v2.executor_factory.HostGuard'),\
              patch('deploy_eval_v2.executor_factory.DockerNode'),\
              patch('deploy_eval_v2.executor_factory.OwnedExecutor') as factory:
-            build_executor(root,dict(identity(),task_root=root),machine_id_reader=lambda:'d'*32)
+            build_executor(root,dict(identity(),node_root=root),machine_id_reader=lambda:'d'*32)
             from deploy_eval_v2.remote_evaluation import RemoteEvaluation
             self.assertIsInstance(factory.call_args.kwargs['evaluator'],RemoteEvaluation)
             self.assertEqual(factory.call_args.kwargs['verified_tester_host'],'tester')
@@ -37,7 +37,7 @@ class ExecutorFactoryTests(unittest.TestCase):
              patch('deploy_eval_v2.executor_factory.verify_frozen',return_value=values),\
              patch('deploy_eval_v2.executor_factory.HostGuard'),\
              patch('deploy_eval_v2.executor_factory.OwnedExecutor') as factory:
-            build_executor(root,dict(identity(),task_root=root),machine_id_reader=lambda:'d'*32)
+            build_executor(root,dict(identity(),node_root=root),machine_id_reader=lambda:'d'*32)
             from deploy_eval_v2.self_container_node import SelfContainerNode
             self.assertIsInstance(factory.call_args.args[4]['a'],SelfContainerNode)
 
@@ -57,7 +57,7 @@ class ExecutorFactoryTests(unittest.TestCase):
              patch('deploy_eval_v2.executor_factory.HostGuard'),\
              patch('deploy_eval_v2.executor_factory.OwnedExecutor'):
             with self.assertRaisesRegex(ProtocolError,'self container node must be the local node'):
-                build_executor(root,dict(identity(),task_root=root),machine_id_reader=lambda:'d'*32)
+                build_executor(root,dict(identity(),node_root=root),machine_id_reader=lambda:'d'*32)
 
     def test_external_host_attestation_required_before_executor_construction(self):
         plan=external_plan()
@@ -67,7 +67,7 @@ class ExecutorFactoryTests(unittest.TestCase):
         # local and do not pretend Linux /etc/machine-id was inspected on Windows.
         with patch('deploy_eval_v2.executor_factory.validate_identity'),patch('deploy_eval_v2.executor_factory.verify_runtime'),patch('deploy_eval_v2.executor_factory.verify_frozen',return_value=values),patch('deploy_eval_v2.executor_factory.ExternalExecutor') as factory:
             root=str(Path('/work/t'))
-            value=dict(identity(),task_root=root)
+            value=dict(identity(),node_root=root)
             with self.assertRaisesRegex(ProtocolError,'machine identity'):
                 build_executor(root,value,machine_id_reader=lambda:'d'*32)
             factory.assert_not_called()

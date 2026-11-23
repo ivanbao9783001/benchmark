@@ -34,7 +34,7 @@ class StartupTests(unittest.TestCase):
 
     def test_control_start_transmits_persisted_nonce_without_stage_request(self):
         transport=Mock(return_value=envelope('t',0))
-        config={'tasks':{'t':dict(host='host.invalid',root='/work/t',allowed_root='/work')}}
+        config={'tasks':{'t':dict(host='host.invalid',root='/work/t',allowed_root='/work',task_root='/tmp/delivery/t')}}
         start_task(dict(task_ref='t',runtime_sha256='a'*64,bundle_sha256='b'*64,nonce='c'*64),config,transport=transport)
         sent=transport.call_args.args[1]
         self.assertEqual(sent['nonce'],'c'*64)

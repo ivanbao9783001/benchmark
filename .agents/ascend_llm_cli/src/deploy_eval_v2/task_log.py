@@ -11,7 +11,7 @@ from .protocol import now
 _lock = threading.RLock()
 
 
-def task_root(path):
+def runtime_root(path):
     path = Path(path).resolve()
     folder = path if path.is_dir() else path.parent
     for candidate in (folder, *folder.parents):
@@ -56,7 +56,7 @@ def append(path, record):
 
 
 def diagnostic(path, message, **fields):
-    root=task_root(path)
+    root=runtime_root(path)
     text=str(message)
     append_many(root/'task.jsonl',[dict(record_type='diagnostic',time=now(),source=Path(path).name,
                                        message=text[offset:offset+2048],**fields)

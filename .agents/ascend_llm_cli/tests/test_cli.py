@@ -17,7 +17,7 @@ class CLITests(unittest.TestCase):
     def invoke(self, args, effect=None, response=None):
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder)/'control.json'
-            config.write_text(json.dumps({'tasks': {'t': {'host': 'example.invalid', 'root': '/work/t', 'allowed_root': '/work'}}}), encoding='utf-8')
+            config.write_text(json.dumps({'tasks': {'t': {'host': 'example.invalid', 'root': '/work/t', 'allowed_root': '/work', 'task_root': '/tmp/delivery/t'}}}), encoding='utf-8')
             output = Output()
             with patch('deploy_eval_v2.cli.sys.stdout', output), patch('deploy_eval_v2.cli.exchange', side_effect=effect, return_value=response) as transport:
                 code = main(['--config', str(config)]+args)

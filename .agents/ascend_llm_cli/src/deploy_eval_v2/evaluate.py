@@ -175,9 +175,10 @@ def run_accuracy_case(plan, tester, case, folder, argv, runner, environment,
     accuracy = accuracy_evidence.summarize(folder, case, dataset, validated,
                                             deadline=deadline, cancelled=cancelled)
     verified = accuracy['status'] == 'VERIFIED'
+    complete = accuracy.get('evidence_complete', verified)
     return dict(schema_version='1.0', evaluation_type='acc', service_id=plan['service']['service_id'],
                 case_id=case['case_id'], execution_status='SUCCEEDED',
-                evidence_status='COMPLETE' if verified else 'PARTIAL',
+                evidence_status='COMPLETE' if complete else 'PARTIAL',
                 accuracy_validity='VERIFIED' if verified else 'UNVERIFIED',
                 accuracy=accuracy,
                 accuracy_evidence=dict(host=verified_local_host,path=str(folder/'accuracy-evidence.json')),

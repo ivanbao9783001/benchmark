@@ -62,7 +62,7 @@ class PublicationCLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             request=self.fixture(folder)
             publisher=Mock(return_value=dict(status='EVENTS'))
-            config={'tasks':{'t':dict(host='host.invalid',root='/work/t',allowed_root='/work')}}
+            config={'tasks':{'t':dict(host='host.invalid',root='/work/t',allowed_root='/work',task_root='/deliver/t')}}
             result=publish(request,config,publisher=publisher)
             self.assertFalse(result['started'])
             args=publisher.call_args.args
@@ -75,7 +75,7 @@ class PublicationCLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             request=self.fixture(folder)
             publisher=Mock(return_value=dict(status='EVENTS'))
-            config={'tasks':{'t':dict(host='host.invalid',root='/work/t',allowed_root='/work',self=True)}}
+            config={'tasks':{'t':dict(host='host.invalid',root='/work/t',allowed_root='/work',task_root='/deliver/t',self=True)}}
             result=publish(request,config,publisher=publisher,prober=Mock())
             self.assertFalse(result['started'])
             self.assertEqual(publisher.call_args.kwargs,{'link':'local'})
@@ -90,7 +90,7 @@ class PublicationCLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             request=self.fixture(folder)
             publisher=Mock()
-            config={'tasks':{'t':dict(host='host.invalid',root='/other/t',allowed_root='/work')}}
+            config={'tasks':{'t':dict(host='host.invalid',root='/other/t',allowed_root='/work',task_root='/deliver/t')}}
             with self.assertRaises(ProtocolError):
                 publish(request,config,publisher=publisher)
             config['tasks']['t']['root']='/work/t'

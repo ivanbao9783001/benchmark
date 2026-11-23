@@ -2,7 +2,7 @@
 import time
 from pathlib import Path
 import traceback
-from .task_log import DiagnosticStream, task_root, record_exception
+from .task_log import DiagnosticStream, runtime_root, record_exception
 from .compiler import digest
 from .durable import atomic_json
 from .process_guard import remaining, Cancelled
@@ -14,7 +14,7 @@ def execute_deployment(compiled, nodes, execution, evidence_path, cancelled, *, 
     """Retry only confirmed failures after verified cleanup, within one deadline."""
     target=Path(evidence_path)
     # Standalone adapter tests also get one root, not a log per retry.
-    root=task_root(target)
+    root=runtime_root(target)
     (root/'.runtime').mkdir(parents=True,exist_ok=True)
     deadline=time.monotonic()+execution['startup_timeout_seconds']
     attempts=[]

@@ -25,7 +25,7 @@
 | `evaluation.dataset` | `{id, split, scope}`，必须与 `datasets` 中的键一致 |
 | 不写 | `evaluation.service`、`deployment.image` |
 
-数据集只能来自派单方：缺失时停止回报，不得自选数据集或缩小 `scope`。
+acc 的 `dataset_id` 默认 `gpqa`（模板固定）；派单未写数据集时按默认继续，不得提问。`datasets.<id>` 的路径属现场事实，必须在 tester 侧取证；路径不存在或为空时停止并回报“缺数据文件”，不得改选数据集或缩小 `scope`。
 
 ## 步骤
 

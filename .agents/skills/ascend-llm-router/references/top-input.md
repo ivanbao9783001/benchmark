@@ -20,6 +20,31 @@ existing 默认就在容器里，`container.self` 只用来标出“当前在哪
 - 现场有多个候选容器而派单方未指定时，停止回报，不按名称猜。
 - 字段差异与生命周期见 [contract.md 容器模式](top-input/contract.md)。
 
+## 0.5 派单最小集与自补边界
+
+派单方只需回答业务事实，不需要了解契约字段。以下业务项缺失才算缺口：
+
+| 业务问题 | 单机 | 双机 |
+| --- | --- | --- |
+| 用哪几张卡 | 必给 | 两侧必给 |
+| 什么模型、权重在哪 | 必给 | 两侧必给 |
+| 做什么（`action` / `topology` / `eval_mode`） | 必给 | 必给 |
+| 数据集（acc） | 可省：acc 固定 `gpqa` | 同左；路径按 tester 所在侧取证 |
+| 容器能否借用 | existing：必给，容器 id 可自证；owned：必给创建与删除授权 | existing：必给两侧容器归属，并给出对端 IP、对端容器 id 与 SSH 访问方式；owned：给 `deployment.image` 与创建/删除授权 |
+
+以下字段由执行方取证或派生，派单方不必提供；其余字段仍按 [contract.md](top-input/contract.md) 的级别判定。
+
+| 类别 | 字段 | 取证或派生方式 |
+| --- | --- | --- |
+| 现场事实 | `container.image`、`network`（existing 为空时）、`machine_id`、`python`、`aisbench`、`model_path`、`tester.datasets.<id>.path`、端口占用 | `self` 节点本地读取；其余节点经 SSH + `docker inspect` / `docker exec`；owned 的 `network` 必须在 plan 前由派单方给出 |
+| 派生 | `task.id`、`root`（`node_root=allowed_root/task.id`）、`task_root`（`deliverables.local_dir/task.id`）、bindings、端口分配、`container_work_root`、`deliverables.local_dir`、`guard_root`、`on_idle`、`authorization`、`dataset.split/scope`、case 参数 | [derivation.md](top-input/derivation.md) 与 plan 模板默认值 |
+
+`container.id` 不属于现场事实：`self` 节点自证；非 `self` 节点必须由派单方给出完整 64 位 id，执行方按它 `docker inspect` 并核对，不按名称猜。
+
+可保守缺省的授权项只有：容器只读使用（不创建、不停止、不删除）、`on_idle=keep_service`、`preempt_other_processes=false`、`create_work_root=false`（只约束节点运行根之外的根，任务自身目录照常创建）。`allowed_root` 是授权边界，必须由派单方给出，执行方不得自行设定、扩大或缩小；`guard_root` 未给时用 CLI 默认 `/var/lib/deploy-eval-v2/guard`，不得派生到交付根、节点运行根或 `allowed_root` 内。PD 的 `kv_transfer.connector` 属于派单决策，执行方只核验两侧镜像可用。采用缺省时在报告 `limitations` 声明未获显式授权。“可省”只说明派单方不必给：执行方必须先把缺省值或派生结果写成**具体值**写回 top_input 再运行 `validate-top-input`（该命令不读缺省，字段缺失即按缺口报错），与 tester 缺省、端口分配的处理方式一致。
+
+缺口处理上只有三类情况停止：业务关键项缺失；现场事实互相冲突（卡被占、路径不存在、数据集为空、多候选容器无法判定归属）；双机缺少对端 IP、容器 id 或 SSH 访问方式。其余停止条件见 [validation.md](top-input/validation.md)。
+
 ## 1. 再判定任务形态
 
 `action` → `topology` → `eval_mode`，与运行时模式正交；`self` 不参与任务形态判定：
@@ -47,7 +72,7 @@ existing 默认就在容器里，`container.self` 只用来标出“当前在哪
 | 双机 PD + 评测 | 契约组装 | 契约组装 |
 | 外部服务只评测 | — | [示例](examples/eval-only-external-acc.json) + [playbook](playbooks/eval-only-external-acc.md) |
 
-existing 的 `self` 是节点标记，不是独立示例：单机示例即唯一节点，双机 PD 示例只标一个节点。`scenarios.json` 与上表同源，场景 id 与示例文件名一一对应，`self` 不进入场景 id；每个示例都必须能通过 `validate-top-input`。`release_only` 是对原部署任务的续接释放，复用原 `task.id`、交付根、runtime 与 nonce，不新建任务目录，不提供示例。
+existing 的 `self` 是节点标记，不是独立示例：单机示例即唯一节点，双机 PD 示例只标一个节点。`scenarios.json` 与上表同源，场景 id 与示例文件名一一对应，`self` 不进入场景 id；每个示例都必须能通过 `validate-top-input`。`release_only` 是对原部署任务的续接释放，复用原 `task.id`、交付根、runtime 与 nonce，不新建交付根或运行根，不提供示例。
 
 ## 3. 读什么
 
@@ -62,14 +87,13 @@ existing 的 `self` 是节点标记，不是独立示例：单机示例即唯一
 
 ## 4. 入口与产物
 
-- 机器派单：提交按示例填写的 top_input；必填缺失即拒绝，不进入 plan。
+- 机器派单：提交按示例填写的 top_input；授权与目标类缺失即拒绝，不进入 plan。
 - 自然语言派单：由当前 Agent 归一化为同等内容的 top_input，并一次性确认授权字段；不得从历史产物补全。
-- 若你是派单方，先按 [dispatch-kit](../../../dispatch-kit/README.md) 的最小充分集向用户收齐环境结论、任务形态、现场事实与授权，缺项一次列全；不要替 subagent 组装 plan/bindings。
-- `control.json` 不作为独立入口；由 `nodes` 段生成并保存在 `<deliverables.local_dir>/<task.id>/`。
-- 任务目录结构、CLI 的 `destination` 约束与字段级别说明见 [contract.md](top-input/contract.md)。
+- 若你是派单方，只需收齐授权与目标（卡、模型、任务、容器结论、双机 SSH；acc 数据集可省，默认 `gpqa`）；现场事实与派生项由接单方补齐，不要替它组装 plan/bindings。
+- `control.json` 不作为独立入口；由 `nodes` 段生成并保存在交付根 `<deliverables.local_dir>/<task.id>/`，每个 tasks 条目同时写 `root`（节点运行根）与 `task_root`（交付根）。
+- 交付根与节点运行根的结构、CLI 的 `destination` 约束与字段级别说明见 [contract.md](top-input/contract.md)。
 
 ## 下一步
-
 - 字段与必填条件： [contract.md](top-input/contract.md)
 - 派生表： [derivation.md](top-input/derivation.md)
 - 校验清单与提交规则： [validation.md](top-input/validation.md)

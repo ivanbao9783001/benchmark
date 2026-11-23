@@ -20,6 +20,8 @@ recorded in accuracy-evidence.json; the metric itself is still reported. Symlink
 escaping paths, malformed rows, count mismatches and ambiguous run directories are
 hard failures.
 
+Accuracy 还须核对输出截断：逐条比较原生预测的 `finish_reason=length`（若提供）或输出长度是否达到 case 的 `max_out_len`。截断样本占比 ≥ 5% 时，`accuracy_validity` 记 `UNVERIFIED`，在 accuracy-evidence.json 记录 `ACC_OUTPUT_TRUNCATED` 与截断计数，accuracy 仍转发但不得作为能力结论；0 < 占比 < 5% 时保持 `VERIFIED`，但必须在 `limitations` 写明截断样本数。证据文件完整性仍由 `evidence_status` 独立判定。
+
 Use the event's result_sha256 when reading a stage result:
 
     deploy-eval-v2 --config control.json read-result --task-ref TASK --artifact-ref results/OP/stage-result.json --expected-sha256 DIGEST

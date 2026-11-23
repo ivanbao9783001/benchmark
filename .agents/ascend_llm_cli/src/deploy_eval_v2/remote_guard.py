@@ -26,13 +26,13 @@ def validate_guard_root(value):
     return value.rstrip('/')
 
 
-def resolve_guard_root(binding, task_root=None):
-    """Binding-local guard root; never inside the task directory it guards."""
+def resolve_guard_root(binding, node_root=None):
+    """Binding-local guard root; never inside the node runtime root it guards."""
     value = validate_guard_root(binding.get('guard_root', DEFAULT_GUARD_ROOT))
-    if task_root is not None:
-        guard, task = PurePosixPath(value), PurePosixPath(task_root)
+    if node_root is not None:
+        guard, task = PurePosixPath(value), PurePosixPath(node_root)
         if guard == task or guard.is_relative_to(task):
-            raise ProtocolError('INVALID_INPUT: guard root must be outside the task directory')
+            raise ProtocolError('INVALID_INPUT: guard root must be outside the node root')
     return value
 
 

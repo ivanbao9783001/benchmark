@@ -14,9 +14,9 @@
 ## 执行约束
 
 - 以 `SKILL.md` 为执行依据，不用 README 或本文件替代阶段流程。
-- 机器派单缺失必填字段时一次性列出全部缺口向用户澄清，不边做边问。
+- 机器派单只对授权与目标类缺口一次性列全并向用户澄清；现场事实与派生项由执行方自行取证或按默认值补齐，也不边做边问。
 - 授权只能收紧不能扩大：`nodes`、`devices`、`allowed_root`、`preempt_other_processes`、`create_work_root` 不解释为可处理授权外资源。
 - 示例只示范结构，不照抄其中的 host、devices、路径与端口。
 - 默认不修改 `skills/` 与 `ascend_llm_cli/` 下的技能、源码与 schema，除非用户明确要求。
-- 不读取历史任务目录、归档或回收站；产物写到 `deliverables.local_dir/<task.id>`，不写仓库根或临时路径。
+- 不读取历史任务目录、归档或回收站；交付类产物写到 `deliverables.local_dir/<task.id>`（交付根），运行证据写到 `allowed_root/<task.id>`（节点运行根），不写仓库根或临时路径；缺省交付根 `<控制机当前目录>/deploy-runs` 属于约定位置，不受“不写仓库根”限制，按派生规则使用即可。
 - 未完成 plan 冻结与 readiness 不进入部署；结果未知时恢复查询，不更换请求身份盲重跑。

@@ -9,7 +9,7 @@
   },
   "nodes": {
     "n1": {
-      "host": "example@192.0.2.11",
+      "host": "192.0.2.11",
       "allowed_root": "/srv/work",
       "python": "/srv/venvs/deploy-eval/bin/python",
       "guard_root": "/srv/guard",
@@ -57,7 +57,7 @@
   },
   "evaluation": {
     "tester": {
-      "host": "example@192.0.2.11",
+      "host": "192.0.2.11",
       "work_root": "/srv/work",
       "python": "/workspace/venvs/aisbench/bin/python",
       "aisbench": "/workspace/venvs/aisbench/bin/ais_bench",
@@ -84,7 +84,7 @@
     }
   },
   "deliverables": {
-    "local_dir": "/srv/work/deliverables"
+    "local_dir": "/srv/deliverables"
   },
   "constraints": [
     "不修改 .agents/ 下的技能与 CLI 源码",

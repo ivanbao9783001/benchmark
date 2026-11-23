@@ -28,10 +28,10 @@
 
 | 缺口 | 去哪取 |
 | --- | --- |
-| `stage`、`destination` | 本次任务与授权的工作目录；`destination` 必须是 `<deliverables.local_dir>/<task.id>/` 下的新文件或新目录 |
+| `stage`、`destination` | 本次任务与授权的工作目录；`destination` 必须是交付根 `<deliverables.local_dir>/<task.id>/`（`task_root`）下的新文件或新目录 |
 | `deployment` 顶层：`schema_version`、`task_id`、`intent`、`id`、`topology`、`model`、`endpoint`、`connections`（必填，可为 `{}`），以及 `instances` 数组 | 字段语义见 references/plan-contract.md；结构由 `export-contracts` 导出；`instances[0]` 由启动档模板填充 |
 | `policy`、`execution`（超时、重试、空闲动作） | 按授权与需求确定，不是模板默认值 |
-| `unresolved` | 必填数组：如实列出未决项，冻结前必须为空；不得凭猜测填默认值 |
+| `unresolved` | 必填数组：只放授权与目标类中无法推断的项；现场事实与模板/派生默认值不得进入，冻结前必须为空。采用的缺省值写进审阅摘要 |
 | `bindings` 全部（host、work_dir、machine_id、model_paths、mounts、network、ports） | 现场发现并取证，禁止跨机复制；借用容器时改为 `container` 与 `container_work_root`，不写 `mounts` |
 | `tester`（host、python、aisbench、datasets、machine_id） | 现场发现；`machine_id` 是 check-ready 的硬门槛；数据集绑定模板只提供 `datasets` 里的一个条目 |
 
@@ -47,7 +47,7 @@
 | `mode` | `acc` | **否** | 改成 perf 就换了指标 |
 | `dataset_id` | `gpqa` | **否** | 必须与 tester.datasets 中的键一致 |
 | `concurrency` | 8 | 是 | 负载形状，按显存与卡数调整（1–1024） |
-| `max_out_len` | 512 | 是 | GPQA 要求一行答案，512 足够（16–32768） |
+| `max_out_len` | 2048 | 是 | 按模型实际输出长度设置；GPQA 虽只要求一行答案，但模型可能先输出推理过程，512 经常截断。评测后必须核对截断率（16–32768） |
 | `timeout_seconds` | 3600 | 是 | 198 题整轮余量（1–86400） |
 
 不可注入的语义由 CLI 固定：零样本 prompt、`temperature=0`、非流式、`request_rate=0`、`retry=1`、`first_option_postprocess('ABCD')`、百分制 accuracy。这些不在 case 中，也不要试图新增字段（`additionalProperties=false` 会拒绝）。

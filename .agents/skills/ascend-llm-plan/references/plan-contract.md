@@ -1,5 +1,7 @@
 # Plan and bindings contract
 
+三种根必须区分：交付根 `task_root = deliverables.local_dir/task_id`（控制机，放 plan/bindings/compiled 的审阅与冻结产物）；节点运行根 `node_root = work_dir/task_id`（每个节点，放 runtime/inputs/状态/日志/原始 results）；existing 的容器运行根 `container_root = container_work_root/task_id`（脚本、日志与原始 results 在容器内）。plan/bindings/compiled 只记录 `work_dir`、`container_work_root` 与 `task_id`，不记录 `task_root`；编译器用前两者派生运行根。
+
 The accompanying schemas define deploy-plan, deploy-bindings, external-eval-plan and eval-bindings. Review and freezing perform schema and semantic validation, compile topology and scripts, and bind all input and runtime digests. These local checks do not prove host readiness.
 
 Deploy plans for either container mode (owned_container or existing_container) may contain evaluation {cases, test_binding}; deploy bindings then include testers. Each tester binds host, machine_id, work_root, python, aisbench, model_path and datasets. Native synthetic datasets use type=aisbench_synthetic. Explicit load values are preserved; defaults must be resolved before review.

@@ -3,7 +3,7 @@ import hashlib
 import os
 from pathlib import Path
 import traceback
-from .task_log import DiagnosticStream, task_root, record_exception
+from .task_log import DiagnosticStream, runtime_root, record_exception
 from .compiler import verify_frozen, canonical
 from .evaluate import execute_external_case
 from .process_guard import Cancelled

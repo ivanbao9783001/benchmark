@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 import traceback
-from .task_log import DiagnosticStream, task_root, record_exception
+from .task_log import DiagnosticStream, runtime_root, record_exception
 from .compiler import verify_frozen
 from .publication import verify_runtime
 from .hashes import digest
@@ -93,7 +93,7 @@ def execute(root,request,*,evaluator=None):
         response=envelope(request['task_id'],0,'ERROR')
         response.update(operation_id=request['operation_id'],cleanup_status='UNVERIFIED' if unknown else 'VERIFIED',
             error=dict(code='REMOTE_CLEANUP_UNKNOWN' if unknown else 'EVALUATION_FAILED',message='Remote evaluator failed; inspect evidence',retryable=False),
-            evidence=dict(host=tester['host'],path=str(task_root(folder/'error.log')/'task.jsonl')))
+            evidence=dict(host=tester['host'],path=str(runtime_root(folder/'error.log')/'task.jsonl')))
     if len(encode(response))>8192:
         raise ProtocolError('TRANSPORT_PROTOCOL_ERROR: tester result budget')
     atomic_json(folder/'response.json',response)

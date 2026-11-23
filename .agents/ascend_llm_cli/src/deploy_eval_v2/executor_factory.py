@@ -28,8 +28,8 @@ def local_machine_id():
 def build_executor(root,identity,*,machine_id_reader=local_machine_id,guard_root=None):
     validate_identity(identity)
     root=Path(root)
-    if str(root)!=identity['task_root']:
-        raise ProtocolError('INVALID_INPUT: runtime task root identity')
+    if str(root)!=identity['node_root']:
+        raise ProtocolError('INVALID_INPUT: runtime node root identity')
     verify_runtime(root/'runtime',identity['runtime_sha256'])
     values=verify_frozen(root/'inputs',identity['bundle_sha256'],identity['runtime_sha256'])
     plan,bindings=values['plan.json'],values['bindings.json']

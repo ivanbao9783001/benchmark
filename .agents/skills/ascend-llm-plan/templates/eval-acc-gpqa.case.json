@@ -3,6 +3,6 @@
   "mode": "acc",
   "dataset_id": "gpqa",
   "concurrency": 8,
-  "max_out_len": 512,
+  "max_out_len": 2048,
   "timeout_seconds": 3600
 }

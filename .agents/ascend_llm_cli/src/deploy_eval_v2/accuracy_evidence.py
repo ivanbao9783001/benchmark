@@ -18,6 +18,8 @@ LINE_LIMIT = 1024*1024
 INFER_LOG_MISSING = 'ACC_INFER_LOG_MISSING'
 EVAL_LOG_MISSING = 'ACC_EVAL_LOG_MISSING'
 SUMMARY_MISSING = 'ACC_SUMMARY_MISSING'
+OUTPUT_TRUNCATED = 'ACC_OUTPUT_TRUNCATED'
+TRUNCATION_LIMIT = 0.05
 
 
 def _confined(root, path, code):
@@ -36,9 +38,13 @@ def _scratch_dir(folder):
     return root, _confined(root, runs[0], 'ACC_EXP_DIR_AMBIGUOUS')
 
 
-def _read_predictions(path, expected):
+def _read_predictions(path, expected, max_out_len=None):
+    """Count rows and output-length truncation; returns (seen, sha256, truncated)."""
     checksum = hashlib.sha256()
     seen = 0
+    truncated = 0
+    limit = max_out_len if (isinstance(max_out_len, int) and not isinstance(max_out_len, bool)
+                            and max_out_len > 0) else None
     with path.open('rb') as stream:
         while True:
             line = stream.readline(LINE_LIMIT+1)
@@ -59,9 +65,14 @@ def _read_predictions(path, expected):
             seen += 1
             if seen > expected:
                 raise ProtocolError('ACC_PREDICTIONS_COUNT_MISMATCH')
+            if limit is not None:
+                tokens = row.get('output_tokens')
+                if row.get('finish_reason') == 'length' or (
+                        isinstance(tokens, int) and not isinstance(tokens, bool) and tokens >= limit):
+                    truncated += 1
     if seen != expected:
         raise ProtocolError('ACC_PREDICTIONS_COUNT_MISMATCH')
-    return seen, checksum.hexdigest()
+    return seen, checksum.hexdigest(), (truncated if limit is not None else None)
 
 
 def _read_accuracy(path):
@@ -98,7 +109,8 @@ def validate_accuracy_result(folder, case, dataset, *, deadline=None, cancelled=
     if not predictions.is_file():
         raise ProtocolError('ACC_PREDICTIONS_MISSING')
     check()
-    num_samples, checksum = _read_predictions(predictions, dataset['samples'])
+    num_samples, checksum, truncated = _read_predictions(predictions, dataset['samples'],
+                                                         case.get('max_out_len'))
     results = _confined(root, run/'results'/aisbench_cli.MODEL_ABBR/(abbr+'.json'),
                         'ACC_RESULTS_MISSING')
     if not results.is_file():
@@ -120,6 +132,7 @@ def validate_accuracy_result(folder, case, dataset, *, deadline=None, cancelled=
                      num_samples=num_samples, all_requests_succeeded=True,
                      accuracy=accuracy, predictions_ref=predictions.relative_to(root).as_posix(),
                      predictions_sha256=checksum, missing_artifacts=missing,
+                     truncated_samples=truncated, max_out_len=case.get('max_out_len'),
                      scope='native predictions/results/log presence; evaluator metric forwarded')
     atomic_json(root/'validated.json', validated)
     return validated
@@ -132,15 +145,32 @@ def summarize(folder, case, dataset, validated, *, deadline=None, cancelled=None
     if deadline is not None:
         remaining(deadline)
     missing = list(validated.get('missing_artifacts', []))
-    status = 'VERIFIED' if validated.get('status') == 'PASSED' and not missing else 'UNVERIFIED'
+    complete = validated.get('status') == 'PASSED' and not missing
+    status = 'VERIFIED' if complete else 'UNVERIFIED'
+    num_samples = validated['num_samples']
+    truncated = validated.get('truncated_samples')
+    limit = validated.get('max_out_len')
+    ratio = truncated/num_samples if isinstance(truncated, int) and num_samples else 0.0
+    reasons, limitations = [], []
+    if isinstance(truncated, int) and truncated:
+        limitations.append(f'{truncated}/{num_samples} predictions reached max_out_len={limit}')
+    if ratio >= TRUNCATION_LIMIT:
+        reasons.append(OUTPUT_TRUNCATED)
+        status = 'UNVERIFIED'
     root = Path(folder).resolve()
     report = dict(schema_version='1.0', status=status, task=dataset['task'],
                   dataset=dataset['dataset_name'], metric='accuracy', unit='percent',
-                  value=validated['accuracy'], num_samples=validated['num_samples'],
-                  missing_artifacts=missing,
+                  value=validated['accuracy'], num_samples=num_samples,
+                  missing_artifacts=missing, evidence_complete=complete,
+                  truncated_samples=truncated, max_out_len=limit,
+                  truncation_ratio=round(ratio, 6), validity_reasons=reasons,
+                  limitations=limitations,
                   scope='GPQA-Diamond full; native evaluator metric; no baseline or gate')
     atomic_json(root/'accuracy-evidence.json', report)
     return dict(schema_version='1.0', status=status, task=dataset['task'],
                 dataset=dataset['dataset_name'], metric='accuracy', unit='percent',
-                value=validated['accuracy'], num_samples=validated['num_samples'],
+                value=validated['accuracy'], num_samples=num_samples,
+                evidence_complete=complete, truncated_samples=truncated,
+                max_out_len=limit, truncation_ratio=round(ratio, 6),
+                validity_reasons=reasons, limitations=limitations,
                 scope=report['scope'])

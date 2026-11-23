@@ -34,7 +34,7 @@ def relay(root,request,*,socket_factory=socket.socket):
             from .artifacts import read_result
             try:
                 identity=load_json(Path(root)/'.runtime/identity.json')
-                if identity.get('task_id')!=request['task_id'] or identity.get('task_root')!=str(Path(root)):
+                if identity.get('task_id')!=request['task_id'] or identity.get('node_root')!=str(Path(root)):
                     raise ProtocolError('RECOVERY_REQUIRED: offline artifact identity mismatch')
             except (OSError,ValueError) as identity_error:
                 raise ProtocolError('UNKNOWN_OUTCOME: offline artifact identity unavailable') from identity_error

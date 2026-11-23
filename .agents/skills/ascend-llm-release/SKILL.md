@@ -11,7 +11,7 @@ description: Deploy and Eval v2 的资源释放审阅、归属核验及结果交
 
 同服务测试与释放互斥；如果仍有活动操作，按授权使用 cancel 并等待真实清理结果，不把取消已接纳当释放成功。保留原 request_id 做幂等恢复；版本冲突先重读事实。
 
-release.completed 后检查逐资源结果及 resource_results_ref。release.unverified、通信未知或部分失败时保留现场，停止复用资源，不删锁、不重放部署来试探。任务目录和证据默认保留，不随容器释放删除。
+release.completed 后检查逐资源结果及 resource_results_ref。release.unverified、通信未知或部分失败时保留现场，停止复用资源，不删锁、不重放部署来试探。任务目录和证据默认保留，不随容器释放删除；交付根与节点运行根都不作为释放对象。
 
 交付已释放、未释放、未知资源清单及证据位置。整体 CLI 退出码 0、operation.cancelled、task.expired 都不能代替资源释放核验。
 

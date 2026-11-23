@@ -23,7 +23,7 @@ def serve(root, task_id, executor, identity=None):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if identity is not None:
             validate_identity(identity)
-            if identity['task_id'] != task_id or identity['task_root'] != str(root):
+            if identity['task_id'] != task_id or identity['node_root'] != str(root):
                 raise ProtocolError('INVALID_INPUT: launcher identity mismatch')
             identity_path = control/'identity.json'
             if identity_path.exists():

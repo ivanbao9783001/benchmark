@@ -74,7 +74,7 @@
     }
   },
   "deliverables": {
-    "local_dir": "/srv/work/deliverables"
+    "local_dir": "/srv/deliverables"
   },
   "constraints": [
     "不修改 .agents/ 下的技能与 CLI 源码",

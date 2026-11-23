@@ -2,7 +2,7 @@
 from pathlib import Path
 import threading
 import traceback
-from .task_log import DiagnosticStream, task_root, record_exception
+from .task_log import DiagnosticStream, runtime_root, record_exception
 from .compiler import verify_frozen,digest
 from .deploy import execute_deployment
 from .durable import atomic_json

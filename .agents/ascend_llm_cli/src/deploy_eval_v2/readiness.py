@@ -26,6 +26,14 @@ def control_is_posix():
     return os.name=='posix'
 
 
+def task_root_writable(path):
+    """The control-side delivery root must be creatable without creating it."""
+    target=Path(path)
+    while not target.exists() and target!=target.parent:
+        target=target.parent
+    return target.is_dir() and os.access(target,os.W_OK|os.X_OK)
+
+
 def self_container_nodes(bound,slots):
     return [slot for slot in slots
             if isinstance(bound['nodes'][slot].get('container'),dict) and
@@ -37,7 +45,7 @@ def check_ready(request,config):
     if not isinstance(request,dict) or set(request)!=fields:
         raise ProtocolError('INVALID_INPUT: readiness request')
     task=request['task_ref']
-    binding=task_binding(config,task)
+    binding=task_binding(config,task,delivery=True)
     values=verify_frozen(request['input_directory'],request['bundle_sha256'],request['runtime_sha256'])
     plan,bound=values['plan.json'],values['bindings.json']
     if plan['task_id']!=task:
@@ -49,6 +57,7 @@ def check_ready(request,config):
     def require(condition,code):
         if not condition and code not in blockers:
             blockers.append(code)
+    require(task_root_writable(binding['task_root']),'TASK_ROOT_NOT_WRITABLE')
     remote=[target for _,target in targets if target.get('self') is not True]
     require(shutil.which('ssh') is not None or not remote,'CONTROL_SSH_MISSING')
     for _,target in targets:

@@ -23,22 +23,37 @@
 
 环境 × 形态的组合查 `references/top-input.md` §2：有示例的按该场景 `example` + `playbook` 填；没有示例的（owned 的其余组合、单机 PD）按 `contract.md` 组装。`scenarios.json` 只是已有示例的索引，不是支持范围。
 
-## 第三步：派单方必须给什么（最小充分集）
+## 第三步：派单方必须给什么
 
-只给接单方无法自行获得的事实与授权。plan/bindings、端口分配、请求文件等派生结构由接单方组装，不要替它写。
+按字段级别判定，不要替接单方组装 plan/bindings。**授权**与**需求**必须由派单方给出；**事实**可缺省，由接单方现场取证；**派生**由接单方按模板生成。接单方必须把事实、派生与保守缺省项写成具体值**写回 top_input** 后再校验——`validate-top-input` 不读缺省。
 
-| 类别 | 必须给 | 不能省的原因 |
+| 字段 | 来源 | 说明 |
 | --- | --- | --- |
-| 环境 | 模式结论；existing 给容器 id / image（`self` 可省略 image）/ `container_work_root` / `network`，owned 给 `deployment.image` 与创建授权 | 决定骨架，判错整单作废 |
-| 目标 | `action`、`topology`、`eval_mode`、`on_idle` | 决定命令链与是否释放 |
-| 机器 | 节点 id、`host`、`allowed_root`、`python`、`guard_root` | 授权边界，不得扩大 |
-| 现场动作 | `preempt_other_processes`、`create_work_root` | 结束他人进程或建目录需要明确许可 |
-| 模型 | 模型 id + `served_name`、每节点 `model_paths`、实例 `devices` | 卡与模型路径不能猜 |
-| 网络端口 | `network`、`ports`（`http` / `kv`）、`endpoint`；PD 另加 `kv_transfer.connector`、proxy 节点 `paths.proxy_program` | HCCL 与监听地址依赖真实值 |
-| 评测 | `tester` 全套（含 `machine_id`、`datasets`）、`dataset`（acc）；`eval_only` 另给 `evaluation.service` | `machine_id` 与路径必须现场取证 |
-| 交付与护栏 | `control_node`、`deliverables.local_dir`、`constraints` | 任务根与不可越界项 |
+| 模式结论、`deployment.image`（owned） | 派单方 | existing / owned；owned 另需创建与删除授权 |
+| `nodes.<id>.container.id` | 派单方；`self` 节点自证 | 完整 64 位；非 `self` 节点不得由执行方按名称猜 |
+| `container.image` | 现场发现 | `self` 可省略，记 `UNVERIFIED` |
+| `container_work_root` | 现场 / 派生 | 容器内 `allowed_root` 的可写投影；唯一候选才采用，否则停止；目录允许不存在 |
+| `network` | 现场发现（existing）/ 派单方（owned） | existing 为空时 `ip -o addr`，对端经 `docker exec`；多网卡按对端可达性选择并留证，无法确定则停；owned 无容器可探测，必须在 plan 前给出 |
+| `machine_id` | 现场发现 | `/etc/machine-id` → `/run/machine-id` → `/var/lib/dbus/machine-id` |
+| `host`、`python` | 现场发现 | 对端经 SSH 验证可达 |
+| `allowed_root` | 派单方 | 授权边界，执行方不得自行设定、扩大或缩小 |
+| `guard_root` | 派单方，可省 | 派单方未给时取 CLI 默认 `/var/lib/deploy-eval-v2/guard` 写回；宿主机全局，不得落在交付根、节点运行根或 `allowed_root` 内 |
+| `action`、`topology`、`eval_mode` | 派单方 | 决定命令链 |
+| `on_idle` | 派单方，可省 | 派单方未给时按 `keep_service` 写回；`deploy_only` 只能取该值 |
+| `preempt_other_processes` | 派单方，可省 | 派单方未给时按 `false` 写回 |
+| `create_work_root` | 派单方，可省 | 派单方未给时按 `false` 写回；只约束节点运行根之外的根，任务自身运行根与交付根照常创建 |
+| 模型 id、`served_name`、`model_paths` | 派单方 | 每节点权重路径；`served_name` 可由模型名派生 |
+| `devices` | 派单方 | 卡号；执行方用 `npu-smi` 核验可见性 |
+| `ports`（http / kv）、`endpoint` | 派生 | 从空闲端口段分配后写入 top_input |
+| `kv_transfer.connector` | 派单方 | PD 必填；执行方只核验两侧镜像都可用，不得自行选值 |
+| `paths.proxy_program` | 现场 | proxy 节点上确认存在且可执行 |
+| `tester` 归属及其 host、路径、`machine_id` | 派单方（双机）/ 派生（单机或明确同机） | 双机 PD 必须明确测试端，避免与被测服务同机；同机时派生，其余现场取证 |
+| `evaluation.dataset` | 派单方 id；`split/scope` 派生 | acc 必填 |
+| `control_node` | 派生 | existing 即 `self` 节点 |
+| `deliverables.local_dir` | 派单方优先，可省 | 派单方未给时缺省 `<控制机当前目录>/deploy-runs` 并写回；必须可写，否则停止，不另选目录 |
+| `constraints` | 派单方 | 不可越界项 |
 
-值必须可核验：容器 id 为完整 64 位；镜像若不是 `self` 节点须为 `sha256:` 摘要，`self` 节点可省略并由执行方记 `UNVERIFIED`；`machine_id` 来自 `/etc/machine-id`。缺失的当场一次性列全，不要边做边补，也不要拿示例值顶替。
+派单方最少只需回答：卡、模型与权重路径、任务、数据集、容器归属（双机另加对端 IP、容器 id、SSH 访问）。其余按上表取证或派生，并在审阅摘要与报告 `limitations` 中留痕。
 
 ## 第四步：校验
 

@@ -16,7 +16,7 @@ def start(root,request,*,starter=ensure_started):
     if not isinstance(request,dict) or set(request)!=fields:
         raise ProtocolError('INVALID_INPUT: startup request')
     identity={key:value for key,value in request.items() if key!='python'}
-    identity['task_root']=str(root)
+    identity['node_root']=str(root)
     validate_identity(identity)
     root=Path(root)
     control=root/'.runtime'

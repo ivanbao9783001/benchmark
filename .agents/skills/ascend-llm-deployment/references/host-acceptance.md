@@ -26,7 +26,7 @@ deploy-eval-v2 --version
 Use the public socket-start workflow in [socket-validation.md](../../ascend-llm-router/references/socket-validation.md). The Agent itself must call deploy, then eval upon deployment.ready, then release upon evaluation.completed. No source or unit test reading is needed. The legacy developer unit test is not a substitute for Agent acceptance.
 
 在每个目标节点核验 Python 版本、jsonschema 导入、/etc/machine-id、
-任务根目录权限；在 runtime 主节点核验 detached Python process creation 可用及授权。
+节点运行根目录权限；在 runtime 主节点核验 detached Python process creation 可用及授权。
 模型节点另核验 Docker、NPU、驱动、镜像、挂载与模型路径；远端子节点
 须能从 runtime 主节点通过非交互 SSH 访问。控制端 SSH 可达不能替代此检查。
 正式启动器还会校验 detached Python process 单元及 live socket 身份，不提供后台 & 降级。
@@ -87,7 +87,7 @@ wait-event 的 after-seq 只使用实际交付的 next_cursor。
 | 崩溃/不明结果 | 进入 RECOVERY_REQUIRED，保留 claims，禁止盲重跑 |
 | 输出 | 普通响应 <=8192 字节；日志按引用读取，原日志保留 |
 
-保留完整任务目录、请求文件、响应及现场版本；不要只保存最终 PASS。
+保留完整交付根与节点运行根、请求文件、响应及现场版本；不要只保存最终 PASS。
 恢复不明资源时按初版契约进入 RECOVERY_REQUIRED，保留证据并人工现场核验，不盲目重跑。自动跨节点修复不属于初版要求。owner 可用 task 范围 cancel 发起核验收尾：无 create/unknown 命令历史才释放 claims，有则保持 RECOVERY_REQUIRED。
 
 ## 五技能安装
