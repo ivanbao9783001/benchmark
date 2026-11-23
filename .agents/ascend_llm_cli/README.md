@@ -53,7 +53,7 @@ deploy-eval-v2 --version
 {"stage":"eval","destination":"prepared-acc","task_id":"acc-01","endpoint":"http://node.example:8000","model":"served-model","tester":{"host":"node.example","work_root":"/work/tasks","python":"/venv/bin/python","aisbench":"/venv/bin/ais_bench","model_path":"/models/tokenizer","datasets":{"gpqa":{"type":"aisbench_task","task":"gpqa_gen_0_shot_str","path":"/data/datasets/gpqa"}}},"cases":[{"case_id":"gpqa_diamond_acc","mode":"acc","dataset_id":"gpqa","concurrency":8,"max_out_len":512,"timeout_seconds":3600}]}
 ```
 
-`path` 必须是包含 `gpqa_diamond.csv` 的绝对目录；样本数固定为 198，命令固定 `--mode all`，不写 `test_range`、不传子集、不重置缓存、不采集性能指标。结果报告 AISBench 评测器返回的 `accuracy`（百分制）与 `accuracy_validity`。
+`path` 必须是包含 `gpqa_diamond.csv` 的绝对目录；样本数缺省为 198，case 可写 `num_prompts`（1–198）走 `--num-prompts` 取前 N 条（mini 模板默认 30，结果标注 subset 且不可与全量对比）；命令固定 `--mode all`，不写 `test_range`、不重置缓存、不采集性能指标。结果报告 AISBench 评测器返回的 `accuracy`（百分制）与 `accuracy_validity`。
 
 ```bash
 deploy-eval-v2 prepare-inputs --request task.json

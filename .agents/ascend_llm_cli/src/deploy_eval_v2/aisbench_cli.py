@@ -174,7 +174,19 @@ def accuracy_dataset_for(dataset):
                 dataset_name=spec['dataset_name'], samples=spec['samples'])
 
 
-def check_accuracy_dataset(dataset):
+def accuracy_sample_count(dataset, case):
+    """Return the samples this accuracy case will infer and evaluate."""
+    full = dataset['samples']
+    requested = case.get('num_prompts')
+    if requested is None:
+        return full
+    if (isinstance(requested, bool) or not isinstance(requested, int) or
+            not 1 <= requested <= full):
+        raise ValueError(f'Accuracy case num_prompts must be an integer in [1, {full}]')
+    return requested
+
+
+def check_accuracy_dataset(dataset, num_prompts=None):
     """Count native task rows with csv.reader; quoted newlines must not matter."""
     path = Path(dataset['directory'])/dataset['file']
     seen = 0
@@ -189,8 +201,9 @@ def check_accuracy_dataset(dataset):
             seen += 1
     if seen != dataset['samples']:
         raise ValueError(f'AISBench task {dataset["task"]} requires {dataset["samples"]} samples; found {seen}')
+    requested = seen if num_prompts is None else accuracy_sample_count(dataset, {'num_prompts': num_prompts})
     return dict(type='aisbench_task', task=dataset['task'], path=str(path),
-                samples=seen, status='CHECKED')
+                samples=seen, requested_samples=requested, status='CHECKED')
 
 
 def write_accuracy_config(spec, case, dataset, service, folder):
@@ -239,8 +252,9 @@ def write_config(spec, case, service, folder, *, check_files=True):
     """Generate the native config selected by the case mode."""
     if task_mode(case) == ACC_MODE:
         dataset = accuracy_dataset_for(spec['benchmark']['datasets'][case['dataset_id']])
+        accuracy_sample_count(dataset, case)
         if check_files:
-            check_accuracy_dataset(dataset)
+            check_accuracy_dataset(dataset, case.get('num_prompts'))
         return write_accuracy_config(spec, case, dataset, service, folder)
     return write_perf_config(spec, case, service, folder, check_files=check_files)
 
@@ -293,9 +307,13 @@ def write_perf_config(spec, case, service, folder, *, check_files=True):
 def commands(executable, config, case, folder):
     """Return the native command line for the case mode."""
     if task_mode(case) == ACC_MODE:
-        # Accuracy runs the full native task: infer and evaluate in one pass.
-        return [('benchmark', [executable, str(config), '--mode', 'all',
-                 '--work-dir', str(folder/'outputs')])]
+        # Accuracy runs infer and evaluate in one pass; the native flag slices
+        # the dataset to the first N prompts without rewriting the config.
+        command = [executable, str(config), '--mode', 'all',
+                   '--work-dir', str(folder/'outputs')]
+        if case.get('num_prompts') is not None:
+            command += ['--num-prompts', str(case['num_prompts'])]
+        return [('benchmark', command)]
     return perf_commands(executable, config, case, folder)
 
 

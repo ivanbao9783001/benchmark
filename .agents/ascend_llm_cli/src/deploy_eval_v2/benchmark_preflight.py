@@ -36,7 +36,7 @@ def inspect_environment(tester,case,*,config_path=None):
         raise ProtocolError('INVALID_INPUT: AISBench console entry point ownership ambiguous or absent')
     if aisbench_cli.task_mode(case) == aisbench_cli.ACC_MODE:
         data=aisbench_cli.accuracy_dataset_for(tester['datasets'][case['dataset_id']])
-        dataset_evidence=aisbench_cli.check_accuracy_dataset(data)
+        dataset_evidence=aisbench_cli.check_accuracy_dataset(data, case.get('num_prompts'))
         dataset_evidence['imports']=check_accuracy_imports()
     else:
         data=aisbench_cli.dataset_for({'datasets':tester['datasets']},case,check_files=True)

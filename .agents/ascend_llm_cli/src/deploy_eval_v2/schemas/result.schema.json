@@ -101,6 +101,20 @@
         "num_samples": {
           "type": "integer",
           "minimum": 1
+        },
+        "scope": {
+          "type": "string"
+        },
+        "dataset_samples": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "num_prompts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "subset": {
+          "type": "boolean"
         }
       }
     },

@@ -10,8 +10,8 @@
 ## 0. 先读这一页（给新 Agent 的行动摘要）
 
 1. 现状：`ascend-llm-eval` 只有性能评测，`case.mode` 只允许 `perf`；精度是明确预留但未实现的。
-2. 本期的唯一交付：在同一个 eval 能力里增加 `mode=acc`，支持 **GPQA-Diamond 全量 198 题 + `gpqa_gen_0_shot_str`**，只输出 accuracy。
-3. 不允许：新增独立 skill、新增数据集、支持子集、增加门禁/基线、改动 AISBench 安装目录。
+2. 本期的唯一交付：在同一个 eval 能力里增加 `mode=acc`，支持 **GPQA-Diamond（缺省全量 198 题，可选 `num_prompts` 子集）+ `gpqa_gen_0_shot_str`**，只输出 accuracy。
+3. 不允许：新增独立 skill、新增数据集、增加门禁/基线、改动 AISBench 安装目录。子集只能通过 case 的 `num_prompts` 开启，不得新增数据集或改题。
 4. 代码入口：`src/deploy_eval_v2/aisbench_cli.py`、`plan_model.py`、`evaluate.py`、`benchmark_preflight.py`、`result_contract.py`、`external_executor.py`、`owned_executor.py`。
 5. 实现顺序、逐文件改法、测试与验收见第 8、9、10、12 节，照做即可。
 6. 所有判定必须可追溯到 AISBench 原生产物；不得用日志文本推断指标，不得把未知值写成 0。
@@ -59,7 +59,7 @@
 
 ### 2.1 目标
 
-1. 在现有 `ascend-llm-eval` 的 `eval` 命令内支持 `mode=acc`，跑通 GPQA-Diamond 全量 198 题。
+1. 在现有 `ascend-llm-eval` 的 `eval` 命令内支持 `mode=acc`，跑通 GPQA-Diamond 全量 198 题；可选 `num_prompts` 子集用于快速验证。
 2. 结果只报告 `accuracy`，并提供 `accuracy_validity` 与证据引用。
 3. 保持 perf 路径行为、产物、判定完全不变。
 4. 所有精度判定可由 AISBench 原生产物复核。
@@ -130,7 +130,7 @@ health 重检 → prepare_case（写配置 + native-expectations）→ preflight
 | D1 | 同一 `ascend-llm-eval` + `eval` 命令，case 增加 `mode: "perf" \| "acc"` | 范围极窄（单数据集/全量/单指标/无门禁），独立 skill 属过度设计 | 不新增入口；SKILL.md 增加 acc 说明 |
 | D2 | 生成自包含 AISBench 配置，不改安装目录 | 与 perf 现有做法一致；避免污染环境、避免版本升级被覆盖 | 配置由我们维护，需与原生 `gpqa_gen_0_shot_str` 语义一致 |
 | D3 | binding 新增 `type: "aisbench_task"`，只允许 `gpqa_gen_0_shot_str` | 表达「AISBench 原生任务」而非任意文件；白名单防止扩散 | 新增 schema 分支；csv 名由适配器固定，用户不可指定 |
-| D4 | 全量由三层保证：配置无 `test_range`、命令无 `--num-prompts`、校验行数必须等于 198 | 用户明确「不支持子集」，必须结构性阻断而非文档约定 | 常量表 `SUPPORTED_TASKS` 内固化 `samples: 198` |
+| D4 | 全量由三层保证：配置无 `test_range`、命令无 `--num-prompts`、校验行数等于有效样本数（缺省 198）；子集通过 case `num_prompts` 显式开启，CLI 追加 `--num-prompts`，校验行数等于 `num_prompts` | 全量保持默认；子集是显式覆盖，必须可追溯并标注 subset | 常量表 `SUPPORTED_TASKS` 内固化 `samples: 198`，`accuracy_sample_count` 统一算有效样本数 |
 | D5 | 模型客户端用 `VLLMCustomAPIChat` | 与仓库 smoke 的 `vllm_api_general_chat` 路径一致，走 `/v1/chat/completions` | 与 perf 的 `VLLMCustomAPI` 不同；配置生成需单独函数 |
 | D6 | case 三个数值字段必填，不给隐式推导；文档推荐 512 / 8 / 3600 | 避免隐藏默认值改变评测语义；perf 的 `concurrency*4` 推导不适用于精度 | schema 必填；SKILL.md 与 prepare-inputs 提示推荐值 |
 | D7 | 证据只核对原生产物，不重算 accuracy | 用户明确选择；198 样本收益有限，多一个子进程增加复杂度 | 接受「完全信任 `results/*.json` 的 `accuracy`」这一残余风险 |

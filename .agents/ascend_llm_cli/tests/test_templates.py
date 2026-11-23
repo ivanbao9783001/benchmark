@@ -51,6 +51,11 @@ class TemplateTest(unittest.TestCase):
     def test_acc_case_matches_schema(self):
         validator("external-eval-plan.schema.json", "case").validate(load("eval-acc-gpqa.case.json"))
 
+    def test_acc_mini_case_matches_schema(self):
+        case = load("eval-acc-gpqa-mini.case.json")
+        validator("external-eval-plan.schema.json", "case").validate(case)
+        self.assertEqual(case["num_prompts"], 30)
+
     def test_perf_case_matches_schema(self):
         validator("external-eval-plan.schema.json", "case").validate(load("eval-perf-synthetic.case.json"))
 

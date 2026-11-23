@@ -10,7 +10,7 @@
 
 endpoint + model 或 service.json，加 case JSON 和 tester 绑定 → 独立评测输入 → 审阅冻结 → 工具依赖与健康预检 → 按 case.mode 进入性能负载或原生精度任务 → result JSON。
 
-部署任务可以永不评测；评测任务可以从未部署过的外部服务开始。同一个部署服务可用于多个独立评测任务。评测故障只清理评测客户端，不授予测试任务服务释放权。健康检查或冒烟失败不得产生 deployment.ready。`perf` 与 `acc` 是同级评测分支：`acc` 只支持 AISBench 原生 `gpqa_gen_0_shot_str`（GPQA-Diamond 全量 198 题），产出 `accuracy_validity` 与百分制 `accuracy`，不采集性能指标、不重置缓存。
+部署任务可以永不评测；评测任务可以从未部署过的外部服务开始。同一个部署服务可用于多个独立评测任务。评测故障只清理评测客户端，不授予测试任务服务释放权。健康检查或冒烟失败不得产生 deployment.ready。`perf` 与 `acc` 是同级评测分支：`acc` 只支持 AISBench 原生 `gpqa_gen_0_shot_str`（GPQA-Diamond，缺省全量 198 题，可选 `num_prompts` 子集），产出 `accuracy_validity` 与百分制 `accuracy`，不采集性能指标、不重置缓存。
 
 ## 公开 JSON 与唯一 Schema
 

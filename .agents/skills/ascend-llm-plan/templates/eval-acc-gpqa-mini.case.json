@@ -1,0 +1,9 @@
+{
+  "case_id": "gpqa_diamond_acc_mini",
+  "mode": "acc",
+  "dataset_id": "gpqa",
+  "num_prompts": 30,
+  "concurrency": 8,
+  "max_out_len": 2048,
+  "timeout_seconds": 3600
+}

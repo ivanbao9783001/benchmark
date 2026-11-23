@@ -14,7 +14,8 @@
 
 | 文件 | 片段用途 | 嵌入位置 |
 | --- | --- | --- |
-| `eval-acc-gpqa.case.json` | 精度 case | `task.json.cases[]`（stage=eval） |
+| `eval-acc-gpqa.case.json` | 精度 case（全量 198） | `task.json.cases[]`（stage=eval） |
+| `eval-acc-gpqa-mini.case.json` | 精度 mini case（前 30 条） | `task.json.cases[]`（stage=eval） |
 | `eval-perf-synthetic.case.json` | 性能 case | `task.json.cases[]`（stage=eval） |
 | `dataset-aisbench-task.json` | 原生数据集绑定 | `task.json.tester.datasets.gpqa` |
 | `dataset-synthetic.json` | 合成数据集绑定 | `task.json.tester.datasets.synthetic` |
@@ -39,18 +40,19 @@
 
 ## 精度 case（GPQA-Diamond）
 
-文件：`eval-acc-gpqa.case.json`
+文件：`eval-acc-gpqa.case.json`（全量）；`eval-acc-gpqa-mini.case.json`（mini，默认 30 条）
 
 | 字段 | 默认 | 可改 | 依据 |
 | --- | --- | --- | --- |
 | `case_id` | `gpqa_diamond_acc` | 是 | 任务内唯一即可 |
 | `mode` | `acc` | **否** | 改成 perf 就换了指标 |
 | `dataset_id` | `gpqa` | **否** | 必须与 tester.datasets 中的键一致 |
+| `num_prompts` | 省略=全量 198 | 是 | 可选 1–198；CLI 追加 `--num-prompts` 只取前 N 条。mini 模板写 30；子集结果不可与全量对比 |
 | `concurrency` | 8 | 是 | 负载形状，按显存与卡数调整（1–1024） |
 | `max_out_len` | 2048 | 是 | 按模型实际输出长度设置；GPQA 虽只要求一行答案，但模型可能先输出推理过程，512 经常截断。评测后必须核对截断率（16–32768） |
-| `timeout_seconds` | 3600 | 是 | 198 题整轮余量（1–86400） |
+| `timeout_seconds` | 3600 | 是 | 整轮余量，全量与子集都适用（1–86400） |
 
-不可注入的语义由 CLI 固定：零样本 prompt、`temperature=0`、非流式、`request_rate=0`、`retry=1`、`first_option_postprocess('ABCD')`、百分制 accuracy。这些不在 case 中，也不要试图新增字段（`additionalProperties=false` 会拒绝）。
+除 `num_prompts` 外，不可注入的语义由 CLI 固定：零样本 prompt、`temperature=0`、非流式、`request_rate=0`、`retry=1`、`first_option_postprocess('ABCD')`、百分制 accuracy。这些不在 case 中，也不要试图新增其他字段（`additionalProperties=false` 会拒绝）。
 
 ## 性能 case（合成数据）
 
@@ -107,7 +109,7 @@
 ```
 
 - `path` 必须替换为 POSIX 绝对路径，指向包含 `gpqa_diamond.csv` 的目录；该 CSV 须为全量 198 条记录（不含表头，按 CSV 记录计，不按物理行数计）。
-- 不支持 `test_range`、子集或改题；否则 accuracy 不可比。
+- 全量评测省略 `num_prompts`；mini 写 `num_prompts`（1–198），CLI 追加 `--num-prompts` 取前 N 条，不在配置里写 `test_range`。子集结果只用于快速冒烟/回归，不可与全量 accuracy 对比。
 - 数据需提前下载到测试机，CLI 不自动拉取。
 
 合成数据（性能）：

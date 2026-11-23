@@ -91,6 +91,14 @@ class AccuracyContractTests(unittest.TestCase):
         del broken['cases'][0]['max_out_len']
         with self.assertRaises(ProtocolError):
             normalize_external_plan(broken)
+        mini = accuracy_plan()
+        mini['cases'][0]['num_prompts'] = 30
+        self.assertEqual(normalize_external_plan(mini)[0]['cases'][0]['num_prompts'], 30)
+        for value in (0, 199):
+            broken = accuracy_plan()
+            broken['cases'][0]['num_prompts'] = value
+            with self.subTest(num_prompts=value), self.assertRaises(ProtocolError):
+                normalize_external_plan(broken)
         perf = external_plan()
         perf['cases'][0]['mode'] = 'perf'
         self.assertEqual(normalize_external_plan(perf)[0]['cases'][0]['mode'], 'perf')
@@ -140,12 +148,22 @@ class AccuracyContractTests(unittest.TestCase):
                                     '--mode', 'all', '--work-dir', str(root/'case'/'outputs')])
             expectations = json.loads((root/'case'/'native-expectations.json').read_text())
             self.assertEqual(expectations, [['service', 'gpqa_diamond_0_shot_str']])
+            mini = accuracy_plan()
+            mini['cases'][0]['num_prompts'] = 30
+            _, _, mini_argv = prepare_case(mini, bindings, 'acc', root/'mini', check_files=False)
+            self.assertEqual(mini_argv[-2:], ['--num-prompts', '30'])
+            mini_text = (root/'mini'/'aisbench-config.py').read_text(encoding='utf-8')
+            self.assertNotIn('test_range', mini_text)
 
     def test_dataset_row_count_uses_csv_reader(self):
         with tempfile.TemporaryDirectory() as folder:
             write_gpqa(folder)
             dataset = accuracy_dataset(folder)
             self.assertEqual(aisbench_cli.check_accuracy_dataset(dataset)['samples'], 198)
+            checked = aisbench_cli.check_accuracy_dataset(dataset, 30)
+            self.assertEqual(checked['requested_samples'], 30)
+            with self.assertRaisesRegex(ValueError, r'\[1, 198\]'):
+                aisbench_cli.check_accuracy_dataset(dataset, 199)
             write_gpqa(folder, samples=197)
             with self.assertRaisesRegex(ValueError, 'requires 198'):
                 aisbench_cli.check_accuracy_dataset(dataset)
@@ -172,16 +190,21 @@ class AccuracyContractTests(unittest.TestCase):
                  patch('deploy_eval_v2.benchmark_preflight.check_accuracy_imports',
                        return_value={'dataset': 'GPQADataset'}) as imports:
                 result = inspect_environment(tester, accuracy_plan()['cases'][0])
+                mini = inspect_environment(
+                    tester, dict(accuracy_plan()['cases'][0], num_prompts=30))
             self.assertEqual(result['dataset']['samples'], 198)
-            imports.assert_called_once_with()
+            self.assertEqual(mini['dataset']['requested_samples'], 30)
+            self.assertEqual(imports.call_count, 2)
 
 
 class AccuracyTruncationTests(unittest.TestCase):
-    def _measure(self, samples, truncated, limit=512):
+    def _measure(self, samples, truncated, limit=512, num_prompts=None):
         with tempfile.TemporaryDirectory() as folder:
             build_native_run(folder, samples=samples, output_tokens=limit, truncated=truncated)
             dataset = accuracy_dataset(folder)
             case = dict(max_out_len=limit)
+            if num_prompts is not None:
+                case['num_prompts'] = num_prompts
             validated = accuracy_evidence.validate_accuracy_result(folder, case, dataset)
             return validated, accuracy_evidence.summarize(folder, case, dataset, validated)
 
@@ -206,6 +229,25 @@ class AccuracyTruncationTests(unittest.TestCase):
         self.assertEqual(validated['truncated_samples'], 0)
         self.assertEqual(accuracy['status'], 'VERIFIED')
         self.assertEqual(accuracy['limitations'], [])
+
+    def test_subset_uses_effective_sample_count(self):
+        validated, accuracy = self._measure(30, 0, num_prompts=30)
+        self.assertEqual(validated['num_samples'], 30)
+        self.assertEqual(validated['dataset_samples'], 198)
+        self.assertTrue(validated['subset'])
+        self.assertEqual(accuracy['status'], 'VERIFIED')
+        self.assertEqual(accuracy['num_samples'], 30)
+        self.assertEqual(accuracy['dataset_samples'], 198)
+        self.assertTrue(accuracy['subset'])
+        self.assertIn('subset: first 30/198', accuracy['limitations'][0])
+        self.assertIn('subset: first 30/198', accuracy['scope'])
+
+    def test_subset_truncation_ratio_uses_subset_denominator(self):
+        validated, accuracy = self._measure(30, 2, num_prompts=30)
+        self.assertEqual(validated['truncated_samples'], 2)
+        self.assertEqual(accuracy['truncation_ratio'], round(2/30, 6))
+        self.assertEqual(accuracy['status'], 'UNVERIFIED')
+        self.assertEqual(accuracy['validity_reasons'], ['ACC_OUTPUT_TRUNCATED'])
 
 
 class AccuracyEvidenceTests(unittest.TestCase):

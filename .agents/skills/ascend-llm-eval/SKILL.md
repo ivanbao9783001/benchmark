@@ -13,7 +13,7 @@ description: Deploy and Eval v2 的服务测试规划、结果证据分析与阶
 
 保留用户显式负载；默认普通请求数为并发×4、稳态为×10。不得为演示减少请求数、改变端口或丢弃未知参数。记录合成长度及前缀偏差，不自动判失败，不把目标前缀比例写成缓存命中率。
 
-精度 case（`mode=acc`）与性能 case 同级：绑定 `type=aisbench_task` 的 `gpqa_gen_0_shot_str`，目录须含 `gpqa_diamond.csv` 且为全量 198 题；不设 `test_range`、不支持子集、不做缓存重置或指标采集。命令为 `<aisbench> <config> --mode all --work-dir <case>/outputs`，只转发 AISBench 评测器返回的百分制 `accuracy`，并核验 predictions 198 行、results JSON、infer/eval 日志与 summary；日志或 summary 缺失时 `accuracy_validity=UNVERIFIED`，但保留原值。
+精度 case（`mode=acc`）与性能 case 同级：绑定 `type=aisbench_task` 的 `gpqa_gen_0_shot_str`，目录须含 `gpqa_diamond.csv` 且为全量 198 题；可选 `num_prompts`（1–198）走 AISBench `--num-prompts` 取前 N 条，mini 模板默认 30；配置不写 `test_range`、不做缓存重置或指标采集。命令为 `<aisbench> <config> --mode all --work-dir <case>/outputs`，有 `num_prompts` 时追加 `--num-prompts N`，只转发 AISBench 评测器返回的百分制 `accuracy`，并核验 predictions 有效样本数行、results JSON、infer/eval 日志与 summary；日志或 summary 缺失时 `accuracy_validity=UNVERIFIED`，但保留原值。子集结果须标注 subset，不可与全量对比。
 
 分析时分别给出 execution_status、evidence_status，以及按 `evaluation_type` 选择的 performance_validity 或 accuracy_validity。性能分支检查 AISBench 退出码、预期模型×数据集结果组、请求数量/成功状态、worker 日志和稳态窗口；精度分支检查预测行数、原生 results、日志存在性，以及输出截断率（达到 max_out_len 的样本占比）。请求完成但没有有效稳态窗口可为 SUCCEEDED + UNVERIFIED；未知指标不填零。
 

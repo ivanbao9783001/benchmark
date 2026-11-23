@@ -302,6 +302,11 @@
         "dataset_id": {
           "$ref": "#/$defs/id"
         },
+        "num_prompts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 198
+        },
         "concurrency": {
           "type": "integer",
           "minimum": 1,

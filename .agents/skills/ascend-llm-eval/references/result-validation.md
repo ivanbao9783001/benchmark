@@ -12,13 +12,20 @@ performance validity.
 validity key. A result missing the branch required by its mode fails the schema.
 
 Accuracy evidence reads `<case>/outputs/<timestamp>`: predictions must contain
-exactly 198 success rows with gold and prediction, and results must contain a
-finite 0-100 `accuracy`. The value is forwarded from the native evaluator, never
-recomputed. Missing infer/eval logs or summary leave `accuracy_validity=UNVERIFIED`
-with `ACC_INFER_LOG_MISSING`, `ACC_EVAL_LOG_MISSING` or `ACC_SUMMARY_MISSING`
-recorded in accuracy-evidence.json; the metric itself is still reported. Symlinks,
-escaping paths, malformed rows, count mismatches and ambiguous run directories are
-hard failures.
+exactly the case's effective sample count of success rows with gold and prediction,
+and results must contain a finite 0-100 `accuracy`. The effective count is 198 when
+`num_prompts` is absent, otherwise the case's `num_prompts`. The value is forwarded
+from the native evaluator, never recomputed. Missing infer/eval logs or summary
+leave `accuracy_validity=UNVERIFIED` with `ACC_INFER_LOG_MISSING`,
+`ACC_EVAL_LOG_MISSING` or `ACC_SUMMARY_MISSING` recorded in accuracy-evidence.json;
+the metric itself is still reported. Symlinks, escaping paths, malformed rows,
+count mismatches and ambiguous run directories are hard failures.
+
+When `num_prompts` is below 198 the run is a subset: `accuracy.num_samples=N`,
+`accuracy.dataset_samples=198` and `accuracy.subset=true`; `scope` and `limitations`
+must state `first N/198`. A complete subset without truncation can still be
+`VERIFIED`, but it is a smoke/regression check only and must not be compared with
+full-set accuracy.
 
 Accuracy 还须核对输出截断：逐条比较原生预测的 `finish_reason=length`（若提供）或输出长度是否达到 case 的 `max_out_len`。截断样本占比 ≥ 5% 时，`accuracy_validity` 记 `UNVERIFIED`，在 accuracy-evidence.json 记录 `ACC_OUTPUT_TRUNCATED` 与截断计数，accuracy 仍转发但不得作为能力结论；0 < 占比 < 5% 时保持 `VERIFIED`，但必须在 `limitations` 写明截断样本数。证据文件完整性仍由 `evidence_status` 独立判定。
 

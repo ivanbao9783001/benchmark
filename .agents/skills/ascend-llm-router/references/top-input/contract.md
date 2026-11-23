@@ -51,9 +51,9 @@
 | 字段 | 级别 | 必填条件 | 说明 |
 | --- | --- | --- | --- |
 | `evaluation.tester` | 需求 | action 含评测 | `{host, work_root, python, aisbench, model_path, machine_id, host_python, datasets}`，与 bindings 的 testers 同形；`machine_id` 虽是可选 schema 字段，但 `validate-top-input` 与 check-ready 都会硬性拒绝缺失值（32 位小写十六进制），必须现场取证（`/etc/machine-id`，容器内为空时按派生表回退顺序读取）；`environment` 为可选的环境变量映射，作用于 preflight、AISBench 与 postflight 子进程；容器内测试再加 `container={id,image?}` 与 `container_work_root`；`self` 节点可省略 `image`，非 self 节点仍须给出摘要；`host` 与节点同语义（self 填本机 hostname 或 IP，非 self 填 SSH 目标）。同机测试的缺省值可先按派生表补齐，但补齐结果必须显式写回 top_input：`host`/`work_root`/`python`/`aisbench`/`model_path`/`datasets`/`machine_id` 任一缺失都会被 `validate-top-input` 拒绝；测试在容器内时 `container` 与 `container_work_root` 也必须显式写出（同机也一样），给出 `container` 而未给 `container_work_root` 即拒绝 |
-| `evaluation.dataset` | 需求 | `eval_mode=acc` | `{id, split, scope}`；acc 当前仅支持 gpqa（精度证据按 198 题校验），派单未写数据集时按模板默认 `id=gpqa` 继续，**不得因此提问或列为缺口**；派单给出非 gpqa 数据集时停止并说明不支持，不得以 gpqa 顶替继续；`split/scope` 可由数据集名与“全量”派生。数据集路径属现场事实，必须在 tester 所在节点/容器内取证（多节点时不在控制机取证）；`perf` 省略，不写 `null` |
+| `evaluation.dataset` | 需求 | `eval_mode=acc` | `{id, split, scope}`；acc 当前仅支持 gpqa（精度证据按有效样本数校验：缺省 198；case `num_prompts=N` 时按 N 并标注 subset），派单未写数据集时按模板默认 `id=gpqa` 继续，**不得因此提问或列为缺口**；派单给出非 gpqa 数据集时停止并说明不支持，不得以 gpqa 顶替继续；`split/scope` 可由数据集名与“全量”派生。数据集路径属现场事实，必须在 tester 所在节点/容器内取证（多节点时不在控制机取证）；`perf` 省略，不写 `null` |
 | `evaluation.service` | 需求 | `action=eval_only` | `{service_id?, endpoint, model, health_path?}`；key 名是 `service_id`，写 `id` 会被静默忽略。省略时由 CLI 按 endpoint+model 派生；其余 action 禁用 |
-| `evaluation.params` | 覆盖 | 可选 | **不是 CLI 字段**：`prepare-inputs` 不读取它，agent 必须把这些覆盖物化进 `cases[]`（键名须为该 case 已声明字段），并在审阅摘要中标为用户显式值 |
+| `evaluation.params` | 覆盖 | 可选 | **不是 CLI 字段**：`prepare-inputs` 不读取它，agent 必须把这些覆盖物化进 `cases[]`（键名须为该 case 已声明字段，例如精度的 `num_prompts`），并在审阅摘要中标为用户显式值 |
 
 ## deliverables / constraints
 

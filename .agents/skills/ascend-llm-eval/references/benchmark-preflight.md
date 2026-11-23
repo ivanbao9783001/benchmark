@@ -16,7 +16,10 @@ sample generation; support checks do not silently reduce load.
 For `mode=acc`, the data check binds the task whitelist (`gpqa_gen_0_shot_str`),
 imports `GPQADataset`, `GPQAEvaluator` and `first_option_postprocess`, and counts
 `gpqa_diamond.csv` with `csv.reader`; only exactly 198 data rows pass. Quoted
-newlines make physical line counts meaningless, and there is no subset mode.
+newlines make physical line counts meaningless. The CSV must stay full even for a
+subset run; when the case declares `num_prompts`, it must be an integer in 1..198
+and AISBench `--num-prompts` performs the first-N slice. A smaller CSV is not a
+substitute for `num_prompts`.
 Both modes declare `summarizer` inside `with read_base():`; AISBench 3.1 builds
 that enforce it reject a custom config that omits the parameter, and the top-level
 import form is dropped when AISBench re-dumps the runtime config.

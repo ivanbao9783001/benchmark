@@ -19,7 +19,7 @@
 
 1. **要做什么**：只评测已有服务 → `eval_only`；只部署 → `deploy_only`；部署后评测 → `deploy_and_eval`。
 2. **部署拓扑**（非 `eval_only`）：单机混部 → `colocated`；P/D 分离 → `pd`（单机或双机）。
-3. **评测模式**（含评测时）：性能 → `perf`；精度 → `acc`（当前仅 GPQA-Diamond 全量 198 题）。
+3. **评测模式**（含评测时）：性能 → `perf`；精度 → `acc`（当前仅 GPQA-Diamond，缺省全量 198 题，可选 `num_prompts` 子集）。
 
 环境 × 形态的组合查 `references/top-input.md` §2：有示例的按该场景 `example` + `playbook` 填；没有示例的（owned 的其余组合、单机 PD）按 `contract.md` 组装。`scenarios.json` 只是已有示例的索引，不是支持范围。
 

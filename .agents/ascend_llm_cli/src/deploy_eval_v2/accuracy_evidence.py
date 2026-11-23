@@ -109,8 +109,8 @@ def validate_accuracy_result(folder, case, dataset, *, deadline=None, cancelled=
     if not predictions.is_file():
         raise ProtocolError('ACC_PREDICTIONS_MISSING')
     check()
-    num_samples, checksum, truncated = _read_predictions(predictions, dataset['samples'],
-                                                         case.get('max_out_len'))
+    num_samples, checksum, truncated = _read_predictions(
+        predictions, aisbench_cli.accuracy_sample_count(dataset, case), case.get('max_out_len'))
     results = _confined(root, run/'results'/aisbench_cli.MODEL_ABBR/(abbr+'.json'),
                         'ACC_RESULTS_MISSING')
     if not results.is_file():
@@ -129,7 +129,9 @@ def validate_accuracy_result(folder, case, dataset, *, deadline=None, cancelled=
         missing.append(SUMMARY_MISSING)
     validated = dict(schema_version='1.0', status='PASSED', mode='acc',
                      task=dataset['task'], dataset=dataset['dataset_name'],
-                     num_samples=num_samples, all_requests_succeeded=True,
+                     num_samples=num_samples, dataset_samples=dataset['samples'],
+                     requested_samples=num_samples, subset=num_samples < dataset['samples'],
+                     all_requests_succeeded=True,
                      accuracy=accuracy, predictions_ref=predictions.relative_to(root).as_posix(),
                      predictions_sha256=checksum, missing_artifacts=missing,
                      truncated_samples=truncated, max_out_len=case.get('max_out_len'),
@@ -148,29 +150,45 @@ def summarize(folder, case, dataset, validated, *, deadline=None, cancelled=None
     complete = validated.get('status') == 'PASSED' and not missing
     status = 'VERIFIED' if complete else 'UNVERIFIED'
     num_samples = validated['num_samples']
+    dataset_samples = dataset['samples']
+    num_prompts = case.get('num_prompts')
+    subset = num_samples < dataset_samples
     truncated = validated.get('truncated_samples')
     limit = validated.get('max_out_len')
     ratio = truncated/num_samples if isinstance(truncated, int) and num_samples else 0.0
     reasons, limitations = [], []
+    if subset:
+        limitations.append(f'subset: first {num_samples}/{dataset_samples} samples; '
+                           'not comparable to full-set accuracy')
     if isinstance(truncated, int) and truncated:
         limitations.append(f'{truncated}/{num_samples} predictions reached max_out_len={limit}')
     if ratio >= TRUNCATION_LIMIT:
         reasons.append(OUTPUT_TRUNCATED)
         status = 'UNVERIFIED'
+    label = 'GPQA-Diamond' if dataset['task'] == 'gpqa_gen_0_shot_str' else dataset['dataset_name']
+    scope = (f'{label} subset: first {num_samples}/{dataset_samples}; native evaluator metric; '
+             'no baseline or gate' if subset else
+             f'{label} full; native evaluator metric; no baseline or gate')
     root = Path(folder).resolve()
     report = dict(schema_version='1.0', status=status, task=dataset['task'],
                   dataset=dataset['dataset_name'], metric='accuracy', unit='percent',
                   value=validated['accuracy'], num_samples=num_samples,
-                  missing_artifacts=missing, evidence_complete=complete,
+                  dataset_samples=dataset_samples,
+                  subset=subset, missing_artifacts=missing, evidence_complete=complete,
                   truncated_samples=truncated, max_out_len=limit,
                   truncation_ratio=round(ratio, 6), validity_reasons=reasons,
-                  limitations=limitations,
-                  scope='GPQA-Diamond full; native evaluator metric; no baseline or gate')
+                  limitations=limitations, scope=scope)
+    if num_prompts is not None:
+        report['num_prompts'] = num_prompts
     atomic_json(root/'accuracy-evidence.json', report)
-    return dict(schema_version='1.0', status=status, task=dataset['task'],
-                dataset=dataset['dataset_name'], metric='accuracy', unit='percent',
-                value=validated['accuracy'], num_samples=num_samples,
-                evidence_complete=complete, truncated_samples=truncated,
-                max_out_len=limit, truncation_ratio=round(ratio, 6),
-                validity_reasons=reasons, limitations=limitations,
-                scope=report['scope'])
+    result = dict(schema_version='1.0', status=status, task=dataset['task'],
+                  dataset=dataset['dataset_name'], metric='accuracy', unit='percent',
+                  value=validated['accuracy'], num_samples=num_samples,
+                  dataset_samples=dataset_samples,
+                  subset=subset, evidence_complete=complete, truncated_samples=truncated,
+                  max_out_len=limit, truncation_ratio=round(ratio, 6),
+                  validity_reasons=reasons, limitations=limitations,
+                  scope=scope)
+    if num_prompts is not None:
+        result['num_prompts'] = num_prompts
+    return result
