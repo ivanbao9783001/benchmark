@@ -14,10 +14,12 @@
 
 | 文件 | 片段用途 | 嵌入位置 |
 | --- | --- | --- |
-| `eval-acc-gpqa.case.json` | 精度 case（全量 198） | `task.json.cases[]`（stage=eval） |
-| `eval-acc-gpqa-mini.case.json` | 精度 mini case（前 30 条） | `task.json.cases[]`（stage=eval） |
+| `eval-acc-gpqa.case.json` | 精度 case（GPQA 全量） | `task.json.cases[]`（stage=eval） |
+| `eval-acc-gpqa-mini.case.json` | 精度 mini case（GPQA 前 30 条） | `task.json.cases[]`（stage=eval） |
+| `eval-acc-gsm8k-mini.case.json` | 精度 mini case（GSM8K 前 30 条） | `task.json.cases[]`（stage=eval） |
 | `eval-perf-synthetic.case.json` | 性能 case | `task.json.cases[]`（stage=eval） |
-| `dataset-aisbench-task.json` | 原生数据集绑定 | `task.json.tester.datasets.gpqa` |
+| `dataset-aisbench-task.json` | 原生数据集绑定（GPQA） | `task.json.tester.datasets.gpqa` |
+| `dataset-aisbench-gsm8k.json` | 原生数据集绑定（GSM8K） | `task.json.tester.datasets.gsm8k` |
 | `dataset-synthetic.json` | 合成数据集绑定 | `task.json.tester.datasets.synthetic` |
 | `deploy-runtime-qwen3-8b.json` | owned 容器运行时 | `deployment.runtime` |
 | `deploy-runtime-existing-container.json` | 借用已有容器运行时 | `deployment.runtime` |
@@ -25,7 +27,7 @@
 
 ## 模板不覆盖的内容
 
-模板只覆盖上表“嵌入位置”列的 7 个路径。完整输入还需：
+模板只覆盖上表“嵌入位置”列的 9 个路径。完整输入还需：
 
 | 缺口 | 去哪取 |
 | --- | --- |
@@ -38,21 +40,21 @@
 
 组装完成后：独立部署（`deploy_only`）或独立测试（`eval_only`）先用 `prepare-inputs` 校验，再进入 draft-review；`deploy_and_eval` 不经过 `prepare-inputs`，直接进入 draft-review（schema 与摘要校验等价）。schema 缺项会拒绝，但不要依赖报错来发现缺块。
 
-## 精度 case（GPQA-Diamond）
+## 精度 case
 
-文件：`eval-acc-gpqa.case.json`（全量）；`eval-acc-gpqa-mini.case.json`（mini，默认 30 条）
+当前支持两个原生任务：GPQA-Diamond（`gpqa_gen_0_shot_str`）与 GSM8K（`gsm8k_gen_0_shot_cot_str`）。case 模板：GPQA 全量 `eval-acc-gpqa.case.json`、GPQA mini `eval-acc-gpqa-mini.case.json`、GSM8K mini `eval-acc-gsm8k-mini.case.json`。
 
 | 字段 | 默认 | 可改 | 依据 |
 | --- | --- | --- | --- |
-| `case_id` | `gpqa_diamond_acc` | 是 | 任务内唯一即可 |
+| `case_id` | `gpqa_diamond_acc` / `gsm8k_acc_mini` | 是 | 任务内唯一即可 |
 | `mode` | `acc` | **否** | 改成 perf 就换了指标 |
-| `dataset_id` | `gpqa` | **否** | 必须与 tester.datasets 中的键一致 |
-| `num_prompts` | 省略=全量 198 | 是 | 可选 1–198；CLI 追加 `--num-prompts` 只取前 N 条。mini 模板写 30；子集结果不可与全量对比 |
+| `dataset_id` | `gpqa` / `gsm8k` | **否** | 必须与 tester.datasets 中的键一致，且该条目的 `task` 与数据集匹配 |
+| `num_prompts` | 省略=全量 | 是 | 只取前 N 条（1 到该数据集实际样本数）；CLI 追加 `--num-prompts`。上限不写死在 schema，改为运行时按数据实际条数校验。mini 模板写 30；子集结果不可与全量对比 |
 | `concurrency` | 8 | 是 | 负载形状，按显存与卡数调整（1–1024） |
-| `max_out_len` | 2048 | 是 | 按模型实际输出长度设置；GPQA 虽只要求一行答案，但模型可能先输出推理过程，512 经常截断。评测后必须核对截断率（16–32768） |
+| `max_out_len` | 2048 | 是 | 按模型实际输出长度设置；GPQA 虽只要求一行答案，GSM8K 需要思维链，都可能先输出推理过程，512 经常截断。评测后必须核对截断率（16–32768） |
 | `timeout_seconds` | 3600 | 是 | 整轮余量，全量与子集都适用（1–86400） |
 
-除 `num_prompts` 外，不可注入的语义由 CLI 固定：零样本 prompt、`temperature=0`、非流式、`request_rate=0`、`retry=1`、`first_option_postprocess('ABCD')`、百分制 accuracy。这些不在 case 中，也不要试图新增其他字段（`additionalProperties=false` 会拒绝）。
+除 `num_prompts` 外，不可注入的语义由 CLI 按数据集固定：GPQA 为零样本选项题（`first_option_postprocess('ABCD')`，百分制 accuracy），GSM8K 为零样本 CoT（`gsm8k_gen_0_shot_cot_str`，`gsm8k_postprocess` + `gsm8k_dataset_postprocess`，数值精确匹配）。两者都使用 `temperature=0`、非流式、`request_rate=0`、`retry=1`。这些不在 case 中，也不要试图新增其他字段（`additionalProperties=false` 会拒绝）。
 
 ## 性能 case（合成数据）
 
@@ -98,7 +100,7 @@
 
 ## 数据集绑定
 
-原生任务（精度唯一可用形式）：
+原生任务（精度唯一可用形式）。GPQA：
 
 ```json
 {
@@ -108,9 +110,19 @@
 }
 ```
 
-- `path` 必须替换为 POSIX 绝对路径，指向包含 `gpqa_diamond.csv` 的目录；该 CSV 须为全量 198 条记录（不含表头，按 CSV 记录计，不按物理行数计）。
-- 全量评测省略 `num_prompts`；mini 写 `num_prompts`（1–198），CLI 追加 `--num-prompts` 取前 N 条，不在配置里写 `test_range`。子集结果只用于快速冒烟/回归，不可与全量 accuracy 对比。
-- 数据需提前下载到测试机，CLI 不自动拉取。
+GSM8K：
+
+```json
+{
+  "type": "aisbench_task",
+  "task": "gsm8k_gen_0_shot_cot_str",
+  "path": "{{dataset.gsm8k.root}}"
+}
+```
+
+- `path` 必须替换为 POSIX 绝对路径，指向数据集目录。GPQA 目录含 `gpqa_diamond.csv`（按 CSV 记录计，不含表头）；GSM8K 目录必须同时含 `train.jsonl` 与 `test.jsonl`，评测与计数使用 `test.jsonl`，缺 `train.jsonl` 时原生 loader 直接失败。
+- 样本数不写死在代码或 schema：预检在测试机现场统计实际条数，`num_prompts` 超过实际条数会被拒绝。全量评测省略 `num_prompts`；mini 写 `num_prompts`，CLI 追加 `--num-prompts` 取前 N 条，不在配置里写 `test_range`。子集结果只用于快速冒烟/回归，不可与全量 accuracy 对比。
+- 数据需提前下载到测试机，CLI 不自动拉取；两个数据集目录同级存放（如 `/home/baoyifan/dataset/gpqa`、`/home/baoyifan/dataset/gsm8k`）。
 
 合成数据（性能）：
 
@@ -136,7 +148,8 @@
 | `{{hccl.base_port}}` | HCCL 基端口，如 `64023` | bindings 端口分配：默认 64023，被占用时顺延；top_input 不写该值 |
 | `{{network.ip}}` | 节点 IP | bindings |
 | `{{network.interface}}` | 网卡名 | bindings |
-| `{{dataset.gpqa.root}}` | 数据集目录，如 `/home/baoyifan/dataset/gpqa` | 测试机实际路径 |
+| `{{dataset.gpqa.root}}` | GPQA 数据集目录，如 `/home/baoyifan/dataset/gpqa` | 测试机实际路径 |
+| `{{dataset.gsm8k.root}}` | GSM8K 数据集目录，如 `/home/baoyifan/dataset/gsm8k` | 测试机实际路径 |
 
 替换后 `placement.devices` 必须是 JSON 数字（写 `6`，不要留成 `"6"`）；`/dev/davinci` 后缀处仍然是字符串。
 

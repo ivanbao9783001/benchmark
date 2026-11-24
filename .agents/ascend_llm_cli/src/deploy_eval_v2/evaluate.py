@@ -168,6 +168,9 @@ def run_accuracy_case(plan, tester, case, folder, argv, runner, environment,
                       deadline, cancelled, verified_local_host):
     """Accuracy evidence: native predictions/results; no metrics or cache reset."""
     dataset = aisbench_cli.accuracy_dataset_for(tester['datasets'][case['dataset_id']])
+    # Preflight counted the bound data in the tester namespace; reuse that
+    # runtime count instead of trusting a static catalog constant.
+    dataset['samples'] = load_json(Path(folder)/'preflight.json', 1 << 20)['dataset']['samples']
     returncode = runner(argv, folder/'aisbench.log', deadline, cancelled, env=environment)
     (folder/'execution.json').write_text(json.dumps({'returncode': returncode}), encoding='utf-8')
     validated = accuracy_evidence.validate_accuracy_result(folder, case, dataset,

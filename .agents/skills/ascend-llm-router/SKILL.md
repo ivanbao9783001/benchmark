@@ -34,7 +34,7 @@ RUNNING 按游标等待；WAIT_TIMEOUT 不代表失败。结果未知时恢复�
 
 - **授权与目标**：谁能做、做什么、边界在哪。只能来自派单方；缺失时一次性列全并停止，这是唯一允许向用户提问的类别。
 - **现场事实**：容器 id 与 image、`network`、`machine_id`、解释器、模型与数据集路径、端口占用。由执行方在容器内或经授权的 SSH 取证后写入，不问。
-- **可推导项**：`task.id`、`root`（节点运行根）、`task_root`（交付根）、bindings、端口分配、`container_work_root`、`deliverables.local_dir`、数据集 `split/scope`、acc 的数据集 id（模板固定 `gpqa`）、case 参数。按派生表与模板默认值直接采用，不问。
+- **可推导项**：`task.id`、`root`（节点运行根）、`task_root`（交付根）、bindings、端口分配、`container_work_root`、`deliverables.local_dir`、数据集 `split/scope`、acc 的数据集 id（缺省 `gpqa`，可选 `gsm8k`）、case 参数。按派生表与模板默认值直接采用，不问。
 
 后两类的取值来源写入审阅摘要与最终报告的 `limitations`；不得列入缺口清单或 `unresolved`。
 

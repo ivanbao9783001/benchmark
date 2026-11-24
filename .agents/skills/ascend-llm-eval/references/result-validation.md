@@ -13,17 +13,19 @@ validity key. A result missing the branch required by its mode fails the schema.
 
 Accuracy evidence reads `<case>/outputs/<timestamp>`: predictions must contain
 exactly the case's effective sample count of success rows with gold and prediction,
-and results must contain a finite 0-100 `accuracy`. The effective count is 198 when
-`num_prompts` is absent, otherwise the case's `num_prompts`. The value is forwarded
-from the native evaluator, never recomputed. Missing infer/eval logs or summary
+and results must contain a finite 0-100 `accuracy`. The effective count is the
+dataset's runtime-counted samples when `num_prompts` is absent, otherwise the
+case's `num_prompts`. The value is forwarded from the native evaluator, never
+recomputed. Missing infer/eval logs or summary
 leave `accuracy_validity=UNVERIFIED` with `ACC_INFER_LOG_MISSING`,
 `ACC_EVAL_LOG_MISSING` or `ACC_SUMMARY_MISSING` recorded in accuracy-evidence.json;
 the metric itself is still reported. Symlinks, escaping paths, malformed rows,
 count mismatches and ambiguous run directories are hard failures.
 
-When `num_prompts` is below 198 the run is a subset: `accuracy.num_samples=N`,
-`accuracy.dataset_samples=198` and `accuracy.subset=true`; `scope` and `limitations`
-must state `first N/198`. A complete subset without truncation can still be
+When `num_prompts` is below the counted samples the run is a subset:
+`accuracy.num_samples=N`, `accuracy.dataset_samples=<counted>` and
+`accuracy.subset=true`; `scope` and `limitations` must state
+`first N/<counted>`. A complete subset without truncation can still be
 `VERIFIED`, but it is a smoke/regression check only and must not be compared with
 full-set accuracy.
 

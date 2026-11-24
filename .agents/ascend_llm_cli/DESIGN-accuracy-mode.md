@@ -10,8 +10,8 @@
 ## 0. 先读这一页（给新 Agent 的行动摘要）
 
 1. 现状：`ascend-llm-eval` 只有性能评测，`case.mode` 只允许 `perf`；精度是明确预留但未实现的。
-2. 本期的唯一交付：在同一个 eval 能力里增加 `mode=acc`，支持 **GPQA-Diamond（缺省全量 198 题，可选 `num_prompts` 子集）+ `gpqa_gen_0_shot_str`**，只输出 accuracy。
-3. 不允许：新增独立 skill、新增数据集、增加门禁/基线、改动 AISBench 安装目录。子集只能通过 case 的 `num_prompts` 开启，不得新增数据集或改题。
+2. 本期的唯一交付：在同一个 eval 能力里增加 `mode=acc`，支持原生任务目录 **GPQA-Diamond（`gpqa_gen_0_shot_str`）+ GSM8K（`gsm8k_gen_0_shot_cot_str`）**，缺省全量、可选 `num_prompts` 子集，只输出 accuracy。
+3. 不允许：新增独立 skill、改动 AISBench 安装目录、增加门禁/基线。数据集扩展只能通过任务目录新增原生条目（数据文件与原生语义随任务固定），子集只能通过 case 的 `num_prompts` 开启，不得改题。
 4. 代码入口：`src/deploy_eval_v2/aisbench_cli.py`、`plan_model.py`、`evaluate.py`、`benchmark_preflight.py`、`result_contract.py`、`external_executor.py`、`owned_executor.py`。
 5. 实现顺序、逐文件改法、测试与验收见第 8、9、10、12 节，照做即可。
 6. 所有判定必须可追溯到 AISBench 原生产物；不得用日志文本推断指标，不得把未知值写成 0。
@@ -59,7 +59,7 @@
 
 ### 2.1 目标
 
-1. 在现有 `ascend-llm-eval` 的 `eval` 命令内支持 `mode=acc`，跑通 GPQA-Diamond 全量 198 题；可选 `num_prompts` 子集用于快速验证。
+1. 在现有 `ascend-llm-eval` 的 `eval` 命令内支持 `mode=acc`，跑通 GPQA-Diamond 与 GSM8K 全量；可选 `num_prompts` 子集用于快速验证。
 2. 结果只报告 `accuracy`，并提供 `accuracy_validity` 与证据引用。
 3. 保持 perf 路径行为、产物、判定完全不变。
 4. 所有精度判定可由 AISBench 原生产物复核。
@@ -129,8 +129,8 @@ health 重检 → prepare_case（写配置 + native-expectations）→ preflight
 |---|---|---|---|
 | D1 | 同一 `ascend-llm-eval` + `eval` 命令，case 增加 `mode: "perf" \| "acc"` | 范围极窄（单数据集/全量/单指标/无门禁），独立 skill 属过度设计 | 不新增入口；SKILL.md 增加 acc 说明 |
 | D2 | 生成自包含 AISBench 配置，不改安装目录 | 与 perf 现有做法一致；避免污染环境、避免版本升级被覆盖 | 配置由我们维护，需与原生 `gpqa_gen_0_shot_str` 语义一致 |
-| D3 | binding 新增 `type: "aisbench_task"`，只允许 `gpqa_gen_0_shot_str` | 表达「AISBench 原生任务」而非任意文件；白名单防止扩散 | 新增 schema 分支；csv 名由适配器固定，用户不可指定 |
-| D4 | 全量由三层保证：配置无 `test_range`、命令无 `--num-prompts`、校验行数等于有效样本数（缺省 198）；子集通过 case `num_prompts` 显式开启，CLI 追加 `--num-prompts`，校验行数等于 `num_prompts` | 全量保持默认；子集是显式覆盖，必须可追溯并标注 subset | 常量表 `SUPPORTED_TASKS` 内固化 `samples: 198`，`accuracy_sample_count` 统一算有效样本数 |
+| D3 | binding 新增 `type: "aisbench_task"`，任务取自受支持的原生目录（GPQA `gpqa_gen_0_shot_str`、GSM8K `gsm8k_gen_0_shot_cot_str`） | 表达「AISBench 原生任务」而非任意文件；目录白名单防止扩散 | 新增 schema 分支；文件名、reader/evaluator/postprocessor 由任务目录固定，用户不可指定 |
+| D4 | 全量由三层保证：配置无 `test_range`、命令无 `--num-prompts`、校验行数等于有效样本数；子集通过 case `num_prompts` 显式开启，CLI 追加 `--num-prompts`，校验行数等于 `num_prompts` | 全量保持默认；子集是显式覆盖，必须可追溯并标注 subset | 样本数不在代码或 schema 写死：预检在测试机按实际数据统计，`accuracy_sample_count` 只做类型/下界，上界由运行时计数校验 |
 | D5 | 模型客户端用 `VLLMCustomAPIChat` | 与仓库 smoke 的 `vllm_api_general_chat` 路径一致，走 `/v1/chat/completions` | 与 perf 的 `VLLMCustomAPI` 不同；配置生成需单独函数 |
 | D6 | case 三个数值字段必填，不给隐式推导；文档推荐 512 / 8 / 3600 | 避免隐藏默认值改变评测语义；perf 的 `concurrency*4` 推导不适用于精度 | schema 必填；SKILL.md 与 prepare-inputs 提示推荐值 |
 | D7 | 证据只核对原生产物，不重算 accuracy | 用户明确选择；198 样本收益有限，多一个子进程增加复杂度 | 接受「完全信任 `results/*.json` 的 `accuracy`」这一残余风险 |
@@ -176,9 +176,9 @@ health 重检 → prepare_case（写配置 + native-expectations）→ preflight
 }
 ```
 
-- `task`：枚举，当前只有 `gpqa_gen_0_shot_str`
-- `path`：绝对目录；必须含 `gpqa_diamond.csv`
-- 文件名、abbr、样本数由适配器常量决定，用户不可覆盖
+- `task`：枚举，当前为 `gpqa_gen_0_shot_str`、`gsm8k_gen_0_shot_cot_str`
+- `path`：绝对目录；GPQA 必须含 `gpqa_diamond.csv`，GSM8K 必须含 `train.jsonl` 与 `test.jsonl`
+- 文件名、abbr、reader/evaluator/postprocessor 由任务目录决定，用户不可覆盖；样本数由预检按实际数据统计
 
 ### 5.3 生成的 AISBench 配置
 
@@ -356,10 +356,10 @@ eval 命令
 
 精度 case 增加：
 
-1. `tester.datasets[dataset_id]` 必须是 `aisbench_task`，`task` 在白名单内
-2. 目录存在，`gpqa_diamond.csv` 存在且可读
-3. 用 `csv.reader` 统计 `row[7] != 'Question'` 的数据行，必须等于 198；每个数据行至少 12 列
-4. 能 `import GPQADataset, GPQAEvaluator` 与 `first_option_postprocess`（防止 AISBench 版本漂移）
+1. `tester.datasets[dataset_id]` 必须是 `aisbench_task`，`task` 在受支持目录内
+2. 目录存在；GPQA 的 `gpqa_diamond.csv` 可读，GSM8K 的 `train.jsonl` 与 `test.jsonl` 均可读
+3. GPQA 用 `csv.reader` 统计 `row[7] != 'Question'` 的数据行且每行至少 12 列；GSM8K 统计 `test.jsonl` 有效行（`question` 为字符串且含 `answer`）。实际条数即 `dataset_samples`
+4. 能 import 任务目录声明的原生类与后处理器（防止 AISBench 版本漂移）
 5. 不检查 tokenizer 长度、不检查 `formal_requests`、不检查 `input_tokens`
 
 ### 7.2 结构校验（`validate_accuracy_result`）
@@ -369,10 +369,10 @@ eval 命令
 | 检查 | 不满足时 |
 |---|---|
 | `outputs/` 下恰好一个时间戳目录 | 硬失败 `ACC_EXP_DIR_AMBIGUOUS` |
-| `predictions/service/gpqa_diamond_0_shot_str.jsonl` 存在 | 硬失败 `ACC_PREDICTIONS_MISSING` |
+| `predictions/service/<dataset_abbr>.jsonl` 存在 | 硬失败 `ACC_PREDICTIONS_MISSING` |
 | 每行合法 JSON、≤1 MiB、`success is True`、有 `gold` 与 `prediction` | 硬失败 `ACC_PREDICTIONS_INVALID` |
-| 行数 == 198 | 硬失败 `ACC_PREDICTIONS_COUNT_MISMATCH` |
-| `results/service/gpqa_diamond_0_shot_str.json` 存在且为对象 | 硬失败 `ACC_RESULTS_MISSING` |
+| 行数 == 有效样本数（`num_prompts` 或预检统计的实际条数） | 硬失败 `ACC_PREDICTIONS_COUNT_MISMATCH` |
+| `results/service/<dataset_abbr>.json` 存在且为对象 | 硬失败 `ACC_RESULTS_MISSING` |
 | `accuracy` 是有限数值且 `0 <= value <= 100` | 硬失败 `ACC_VALUE_INVALID` |
 | `logs/infer/...`、`logs/eval/...` 存在 | 软条件，缺失记 `ACC_*_LOG_MISSING` |
 | `summary/summary_<timestamp>.*` 存在 | 软条件，缺失记 `ACC_SUMMARY_MISSING` |
@@ -441,7 +441,7 @@ else:
   "required": ["type", "task", "path"],
   "properties": {
     "type": {"const": "aisbench_task"},
-    "task": {"enum": ["gpqa_gen_0_shot_str"]},
+    "task": {"enum": ["gpqa_gen_0_shot_str", "gsm8k_gen_0_shot_cot_str"]},
     "path": {"$ref": "#/$defs/path"}
   }
 }
@@ -485,10 +485,28 @@ else:
 ```python
 SUPPORTED_TASKS = {
     'gpqa_gen_0_shot_str': dict(
+        layout='single_csv',
         file='gpqa_diamond.csv',
-        samples=198,
+        dataset_class='GPQADataset', evaluator='GPQAEvaluator',
+        imports=((DATASETS_MODULE, ('GPQADataset', 'GPQAEvaluator')),
+                 (POSTPROCESS_MODULE, ('first_option_postprocess',))),
         dataset_abbr='gpqa_diamond_0_shot_str',
-        dataset_name='gpqa_diamond',
+        dataset_name='gpqa_diamond', label='GPQA-Diamond',
+        reader_columns=('question', 'A', 'B', 'C', 'D'), output_column='answer',
+        prompt=GPQA_PROMPT,
+        pred_postprocessor="dict(type=first_option_postprocess, options='ABCD')",
+    ),
+    'gsm8k_gen_0_shot_cot_str': dict(
+        layout='split_jsonl',
+        split_files=dict(train='train.jsonl', test='test.jsonl'), evaluated_split='test',
+        dataset_class='GSM8KDataset', evaluator='Gsm8kEvaluator',
+        imports=((DATASETS_MODULE, ('GSM8KDataset', 'gsm8k_postprocess',
+                                    'gsm8k_dataset_postprocess', 'Gsm8kEvaluator')),),
+        dataset_abbr='gsm8k', dataset_name='gsm8k', label='GSM8K',
+        reader_columns=('question',), output_column='answer',
+        prompt=GSM8K_PROMPT, pred_role='BOT',
+        pred_postprocessor='dict(type=gsm8k_postprocess)',
+        dataset_postprocessor='dict(type=gsm8k_dataset_postprocess)',
     ),
 }
 MODEL_ABBR = 'service'
@@ -496,8 +514,9 @@ MODEL_ABBR = 'service'
 
 - `require_supported_mode(case)`：允许 `perf` 与 `acc`，其余保持原报错文案
 - 新增 `task_mode(case)`：返回 `case.get('mode', 'perf')`
-- 新增 `accuracy_dataset_for(dataset)`：校验 `type` / `task` / `path`，返回 `dict(dir=..., file=..., abbr=..., samples=..., name=...)`
-- 新增 `check_accuracy_dataset(dataset)`：用 `csv.reader` 数行、校验列数、断言 `samples`
+- 新增 `accuracy_imports(task)`：返回任务目录里的原生 import 列表，配置生成与预检共用
+- 新增 `accuracy_dataset_for(dataset)`：校验 `type` / `task` / `path`，返回任务目录派生的布局、文件、abbr 等（不返回样本数）
+- 新增 `check_accuracy_dataset(dataset, num_prompts)`：按 layout 统计实际条数，按实际条数校验 `num_prompts` 上界，返回 `samples` / `requested_samples`
 - 新增 `write_accuracy_config(spec, case, dataset, service, folder)`：按 5.3 生成配置，返回 `config` 路径
 - `write_config` 保持 perf 语义不变；由 `prepare_case` 决定调用哪个写配置函数
 - `commands(executable, config, case, folder)`：按 mode 返回

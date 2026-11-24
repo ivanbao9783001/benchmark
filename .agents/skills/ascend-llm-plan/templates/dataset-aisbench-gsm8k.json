@@ -1,0 +1,5 @@
+{
+  "type": "aisbench_task",
+  "task": "gsm8k_gen_0_shot_cot_str",
+  "path": "{{dataset.gsm8k.root}}"
+}

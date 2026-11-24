@@ -33,7 +33,7 @@
 2. `nodes` 段同时投影到两处：`control.json` 的 tasks 条目（含其 `nodes` 与 `tester` 目标）与 bindings 的节点表。不重新推导 `host` / `allowed_root`；节点 `root` 采用约定值 `allowed_root/task.id`（node_root），并在 tasks 条目另写 `task_root=deliverables.local_dir/task.id`；三者逐项显式写入，不设覆盖位。
 3. 事实类字段非空即视为派单方已确认：只核验存在性与冲突，不重新选值；核验失败时停止回报，不自行替换。为空时才现场发现并留证；existing 模式下 `network` 不得为空。
 4. `nodes.<n>.guard_root` 直接投影为 bindings 的 `guard_root`，不再自行发现；仍须核验不在节点运行根或 `allowed_root` 内、未被其他任务占用（`claims/`、`probes/`）。目录不存在不是阻塞项，发布阶段会创建并做写探测。阻断证据只写 `<guard_root>/work/<task.id>-preflight/`。
-5. `eval_mode=acc` 且 `evaluation.dataset` 缺失时，按模板默认补 `{id:gpqa, split:diamond, scope:full}`，不得因数据集 id 提问；派单给出非 gpqa 数据集时停止并说明不支持，不得替换为 gpqa 继续；仅当 tester 侧数据集路径不存在或为空时停止，按“缺数据文件”回报，不得改选其它数据集。
+5. `eval_mode=acc` 且 `evaluation.dataset` 缺失时，按模板默认补 `{id:gpqa, split:diamond, scope:full}`，不得因数据集 id 提问；派单给出 `gpqa` 或 `gsm8k` 之外的数据集时停止并说明不支持，不得替换为 `gpqa` 继续；`gsm8k` 派生为 `{id:gsm8k, split:test, scope:full}`，`datasets.gsm8k.task` 为 `gsm8k_gen_0_shot_cot_str`；仅当 tester 侧数据集路径不存在或为空时停止，按“缺数据文件”回报，不得改选其它数据集。
 6. 不写 case 参数（`concurrency`、`formal_requests`、`timeout_seconds` 等）；用户明确指定时写入 `evaluation.params`，键名必须与模板 case 一致，并在交付中标为“用户显式值”。
 7. 不读取历史任务目录、归档或回收站，不从历史产物复制配置。
 8. 不得因观测不足放大负载：不能为了提高可见性提高并发、加长输出、增加请求数或延长稳态窗口；负载只来自模板默认值与 `evaluation.params`。

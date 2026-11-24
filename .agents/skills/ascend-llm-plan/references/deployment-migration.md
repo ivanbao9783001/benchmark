@@ -43,7 +43,7 @@ proxy实例不占设备。launch.proxy_program_key指向nodes[slot].paths中的�
 
 | 原始命令参数 | 结构化位置（不要重复放launch.args） |
 | --- | --- |
-| --host | bindings.nodes[slot].deployments[deployment.id].network.ip |
+| --host | bindings.nodes[slot].deployments[deployment.id].network.ip（记录为 endpoint；编译监听固定为 `0.0.0.0`，使同容器回环 `127.0.0.1` 与节点 IP 均可访问；HCCL/VLLM_HOST_IP 仍用 network.ip） |
 | --port | bindings.nodes[slot].deployments[deployment.id].ports[instance.id].http |
 | --served-model-name | deployment.model.served_name，须保留参考实际名称 |
 | --kv-transfer-config | instance.launch.kv_transfer_config，保留完整JSON |

@@ -31,9 +31,11 @@ def accuracy_bindings():
     return bindings
 
 
-def accuracy_dataset(directory):
-    return aisbench_cli.accuracy_dataset_for(
+def accuracy_dataset(directory, samples=198):
+    dataset = aisbench_cli.accuracy_dataset_for(
         dict(type='aisbench_task', task='gpqa_gen_0_shot_str', path=str(directory)))
+    dataset['samples'] = samples
+    return dataset
 
 
 def write_gpqa(directory, samples=198, columns=12):
@@ -49,10 +51,21 @@ def write_gpqa(directory, samples=198, columns=12):
     return path
 
 
+def write_gsm8k(directory, test_samples=1319, train_samples=7473):
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    for split, count in (('train', train_samples), ('test', test_samples)):
+        with (directory/(split+'.jsonl')).open('w', encoding='utf-8') as stream:
+            for index in range(count):
+                row = dict(question=f'Question {index}?', answer=f'work\n#### {index}')
+                stream.write(json.dumps(row)+'\n')
+    return directory
+
+
 def build_native_run(root, samples=198, accuracy=42.5, success=True, logs=True, summary=True,
-                     output_tokens=None, truncated=0):
+                     output_tokens=None, truncated=0, abbr='gpqa_diamond_0_shot_str'):
     run = Path(root)/'outputs'/'20261118_120000'
-    predictions = run/'predictions'/'service'/'gpqa_diamond_0_shot_str.jsonl'
+    predictions = run/'predictions'/'service'/(abbr+'.jsonl')
     predictions.parent.mkdir(parents=True)
     with predictions.open('w', encoding='utf-8') as stream:
         for index in range(samples):
@@ -61,12 +74,12 @@ def build_native_run(root, samples=198, accuracy=42.5, success=True, logs=True, 
             if output_tokens is not None:
                 row['output_tokens'] = output_tokens if index < truncated else 1
             stream.write(json.dumps(row)+'\n')
-    results = run/'results'/'service'/'gpqa_diamond_0_shot_str.json'
+    results = run/'results'/'service'/(abbr+'.json')
     results.parent.mkdir(parents=True)
     results.write_text(json.dumps({'accuracy': accuracy}), encoding='utf-8')
     if logs:
         for name in ('infer', 'eval'):
-            path = run/'logs'/name/'service'/'gpqa_diamond_0_shot_str.out'
+            path = run/'logs'/name/'service'/(abbr+'.out')
             path.parent.mkdir(parents=True)
             path.write_text('native log', encoding='utf-8')
     if summary:
@@ -94,11 +107,14 @@ class AccuracyContractTests(unittest.TestCase):
         mini = accuracy_plan()
         mini['cases'][0]['num_prompts'] = 30
         self.assertEqual(normalize_external_plan(mini)[0]['cases'][0]['num_prompts'], 30)
-        for value in (0, 199):
-            broken = accuracy_plan()
-            broken['cases'][0]['num_prompts'] = value
-            with self.subTest(num_prompts=value), self.assertRaises(ProtocolError):
-                normalize_external_plan(broken)
+        # No static upper bound: the bound is checked against counted data later.
+        large = accuracy_plan()
+        large['cases'][0]['num_prompts'] = 199
+        self.assertEqual(normalize_external_plan(large)[0]['cases'][0]['num_prompts'], 199)
+        broken = accuracy_plan()
+        broken['cases'][0]['num_prompts'] = 0
+        with self.assertRaises(ProtocolError):
+            normalize_external_plan(broken)
         perf = external_plan()
         perf['cases'][0]['mode'] = 'perf'
         self.assertEqual(normalize_external_plan(perf)[0]['cases'][0]['mode'], 'perf')
@@ -106,7 +122,12 @@ class AccuracyContractTests(unittest.TestCase):
     def test_accuracy_binding_is_a_sibling_schema_branch(self):
         plan, bindings = accuracy_plan(), accuracy_bindings()
         validate_eval_bindings(plan, bindings)
-        for task in ('gpqa_gen_0_shot_cot_chat_prompt', 'gpqa_ppl_0_shot_str'):
+        gsm8k = accuracy_bindings()
+        gsm8k['testers']['tester']['datasets']['gpqa'] = dict(
+            type='aisbench_task', task='gsm8k_gen_0_shot_cot_str', path='/data/gsm8k')
+        validate_eval_bindings(plan, gsm8k)
+        for task in ('gpqa_gen_0_shot_cot_chat_prompt', 'gpqa_ppl_0_shot_str',
+                     'gsm8k_gen_0_shot_cot_chat_prompt'):
             broken = accuracy_bindings()
             broken['testers']['tester']['datasets']['gpqa']['task'] = task
             with self.subTest(task=task), self.assertRaises(ProtocolError):
@@ -155,6 +176,37 @@ class AccuracyContractTests(unittest.TestCase):
             mini_text = (root/'mini'/'aisbench-config.py').read_text(encoding='utf-8')
             self.assertNotIn('test_range', mini_text)
 
+    def test_gsm8k_native_config_and_command(self):
+        plan = accuracy_plan()
+        bindings = eval_bindings()
+        bindings['testers']['tester']['datasets'] = {
+            'gpqa': dict(type='aisbench_task', task='gsm8k_gen_0_shot_cot_str', path='/data/gsm8k')}
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            case, _, argv = prepare_case(plan, bindings, 'acc', root/'case', check_files=False)
+            text = (root/'case'/'aisbench-config.py').read_text(encoding='utf-8')
+            py_compile.compile(str(root/'case'/'aisbench-config.py'), doraise=True)
+            self.assertIn('from ais_bench.benchmark.datasets import GSM8KDataset, gsm8k_postprocess, '
+                          'gsm8k_dataset_postprocess, Gsm8kEvaluator', text)
+            self.assertIn("abbr='gsm8k'", text)
+            self.assertIn("path='/data/gsm8k'", text)
+            self.assertNotIn('name=', text)
+            self.assertIn("input_columns=['question']", text)
+            self.assertIn("template=\"Question: {question}\\nLet's think step by step\\nAnswer:\"", text)
+            self.assertIn('Gsm8kEvaluator', text)
+            self.assertIn("pred_role='BOT'", text)
+            self.assertIn("pred_postprocessor=dict(type=gsm8k_postprocess)", text)
+            self.assertIn('dataset_postprocessor', text)
+            self.assertNotIn('test_range', text)
+            self.assertEqual(argv, ['/venv/bin/ais_bench', str(root/'case'/'aisbench-config.py'),
+                                    '--mode', 'all', '--work-dir', str(root/'case'/'outputs')])
+            expectations = json.loads((root/'case'/'native-expectations.json').read_text())
+            self.assertEqual(expectations, [['service', 'gsm8k']])
+            mini = accuracy_plan()
+            mini['cases'][0]['num_prompts'] = 30
+            _, _, mini_argv = prepare_case(mini, bindings, 'acc', root/'mini', check_files=False)
+            self.assertEqual(mini_argv[-2:], ['--num-prompts', '30'])
+
     def test_dataset_row_count_uses_csv_reader(self):
         with tempfile.TemporaryDirectory() as folder:
             write_gpqa(folder)
@@ -164,11 +216,44 @@ class AccuracyContractTests(unittest.TestCase):
             self.assertEqual(checked['requested_samples'], 30)
             with self.assertRaisesRegex(ValueError, r'\[1, 198\]'):
                 aisbench_cli.check_accuracy_dataset(dataset, 199)
-            write_gpqa(folder, samples=197)
-            with self.assertRaisesRegex(ValueError, 'requires 198'):
-                aisbench_cli.check_accuracy_dataset(dataset)
             write_gpqa(folder, columns=10)
             with self.assertRaisesRegex(ValueError, 'question and choices'):
+                aisbench_cli.check_accuracy_dataset(dataset)
+
+    def test_dataset_size_is_counted_instead_of_hardcoded(self):
+        with tempfile.TemporaryDirectory() as folder:
+            write_gpqa(folder, samples=250)
+            dataset = accuracy_dataset(folder, samples=0)
+            counted = aisbench_cli.check_accuracy_dataset(dataset, 250)
+            self.assertEqual(counted['samples'], 250)
+            self.assertEqual(counted['requested_samples'], 250)
+            with self.assertRaisesRegex(ValueError, r'\[1, 250\]'):
+                aisbench_cli.check_accuracy_dataset(dataset, 251)
+
+    def test_gsm8k_counts_test_split_and_requires_both_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            write_gsm8k(folder, test_samples=12, train_samples=5)
+            dataset = aisbench_cli.accuracy_dataset_for(
+                dict(type='aisbench_task', task='gsm8k_gen_0_shot_cot_str', path=folder))
+            counted = aisbench_cli.check_accuracy_dataset(dataset, 4)
+            self.assertEqual(counted['samples'], 12)
+            self.assertEqual(counted['requested_samples'], 4)
+            self.assertEqual(counted['split'], 'test')
+            self.assertTrue(counted['path'].endswith('test.jsonl'))
+            with self.assertRaisesRegex(ValueError, r'\[1, 12\]'):
+                aisbench_cli.check_accuracy_dataset(dataset, 13)
+            (Path(folder)/'train.jsonl').unlink()
+            with self.assertRaisesRegex(ValueError, 'train.jsonl'):
+                aisbench_cli.check_accuracy_dataset(dataset)
+
+    def test_gsm8k_rejects_rows_without_question_or_answer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            write_gsm8k(folder, test_samples=2, train_samples=1)
+            with (Path(folder)/'test.jsonl').open('a', encoding='utf-8') as stream:
+                stream.write(json.dumps({'question': 'q'})+'\n')
+            dataset = aisbench_cli.accuracy_dataset_for(
+                dict(type='aisbench_task', task='gsm8k_gen_0_shot_cot_str', path=folder))
+            with self.assertRaisesRegex(ValueError, 'input/output columns'):
                 aisbench_cli.check_accuracy_dataset(dataset)
 
     def test_preflight_checks_native_imports_and_rows(self):
@@ -265,6 +350,23 @@ class AccuracyEvidenceTests(unittest.TestCase):
                              ('VERIFIED', 42.5, 'percent', 198))
             report = json.loads((Path(folder)/'accuracy-evidence.json').read_text())
             self.assertEqual(report['value'], 42.5)
+
+    def test_gsm8k_evidence_forwards_native_metric(self):
+        with tempfile.TemporaryDirectory() as folder:
+            build_native_run(folder, samples=12, accuracy=33.3, abbr='gsm8k')
+            dataset = aisbench_cli.accuracy_dataset_for(
+                dict(type='aisbench_task', task='gsm8k_gen_0_shot_cot_str', path='/data/gsm8k'))
+            dataset['samples'] = 1319
+            case = dict(max_out_len=512, num_prompts=12)
+            validated = accuracy_evidence.validate_accuracy_result(folder, case, dataset)
+            self.assertEqual((validated['num_samples'], validated['dataset_samples'], validated['subset']),
+                             (12, 1319, True))
+            accuracy = accuracy_evidence.summarize(folder, case, dataset, validated)
+            self.assertEqual((accuracy['value'], accuracy['task'], accuracy['status']),
+                             (33.3, 'gsm8k_gen_0_shot_cot_str', 'VERIFIED'))
+            self.assertIn('GSM8K subset: first 12/1319', accuracy['scope'])
+            report = json.loads((Path(folder)/'accuracy-evidence.json').read_text())
+            self.assertEqual(report['dataset'], 'gsm8k')
 
     def test_missing_soft_artifacts_downgrade_but_keep_metric(self):
         with tempfile.TemporaryDirectory() as folder:

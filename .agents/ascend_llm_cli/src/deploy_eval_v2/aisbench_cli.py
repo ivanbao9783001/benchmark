@@ -14,18 +14,50 @@ from urllib.parse import urlsplit
 PERF_MODE = 'perf'
 ACC_MODE = 'acc'
 MODEL_ABBR = 'service'
-# Native accuracy tasks are selected by name; AISBench owns their semantics.
-SUPPORTED_TASKS = {
-    'gpqa_gen_0_shot_str': dict(
-        file='gpqa_diamond.csv',
-        samples=198,
-        dataset_abbr='gpqa_diamond_0_shot_str',
-        dataset_name='gpqa_diamond',
-    ),
-}
 GPQA_PROMPT = ('What is the correct answer to this question: {question}\nChoices:\n'
                '(A){A}\n(B){B}\n(C){C}\n(D){D}\n'
                'Format your response as follows: "The correct answer is (insert answer here)"')
+GSM8K_PROMPT = "Question: {question}\nLet's think step by step\nAnswer:"
+DATASETS_MODULE = 'ais_bench.benchmark.datasets'
+POSTPROCESS_MODULE = 'ais_bench.benchmark.utils.postprocess.text_postprocessors'
+# Native accuracy tasks are selected by name; AISBench owns their semantics.
+# Entries describe the native task only: sample counts come from the bound data
+# at runtime, so adding or resizing a dataset never edits this table.
+SUPPORTED_TASKS = {
+    'gpqa_gen_0_shot_str': dict(
+        layout='single_csv',
+        file='gpqa_diamond.csv',
+        dataset_class='GPQADataset',
+        evaluator='GPQAEvaluator',
+        imports=((DATASETS_MODULE, ('GPQADataset', 'GPQAEvaluator')),
+                 (POSTPROCESS_MODULE, ('first_option_postprocess',))),
+        dataset_abbr='gpqa_diamond_0_shot_str',
+        dataset_name='gpqa_diamond',
+        label='GPQA-Diamond',
+        reader_columns=('question', 'A', 'B', 'C', 'D'),
+        output_column='answer',
+        prompt=GPQA_PROMPT,
+        pred_postprocessor="dict(type=first_option_postprocess, options='ABCD')",
+    ),
+    'gsm8k_gen_0_shot_cot_str': dict(
+        layout='split_jsonl',
+        split_files=dict(train='train.jsonl', test='test.jsonl'),
+        evaluated_split='test',
+        dataset_class='GSM8KDataset',
+        evaluator='Gsm8kEvaluator',
+        imports=((DATASETS_MODULE, ('GSM8KDataset', 'gsm8k_postprocess',
+                                    'gsm8k_dataset_postprocess', 'Gsm8kEvaluator')),),
+        dataset_abbr='gsm8k',
+        dataset_name='gsm8k',
+        label='GSM8K',
+        reader_columns=('question',),
+        output_column='answer',
+        prompt=GSM8K_PROMPT,
+        pred_role='BOT',
+        pred_postprocessor='dict(type=gsm8k_postprocess)',
+        dataset_postprocessor='dict(type=gsm8k_dataset_postprocess)',
+    ),
+}
 
 
 def task_mode(case):
@@ -157,8 +189,13 @@ def check_dataset(dataset, count):
         raise ValueError(f'Dataset has {seen} rows; requested {count}')
 
 
+def accuracy_imports(task):
+    """Return the native imports a task needs; config and preflight share them."""
+    return list(SUPPORTED_TASKS[task]['imports'])
+
+
 def accuracy_dataset_for(dataset):
-    """Resolve a native AISBench accuracy task binding to fixed task constants."""
+    """Resolve a native AISBench accuracy task binding to its catalog semantics."""
     if not isinstance(dataset, dict) or dataset.get('type') != 'aisbench_task':
         raise ValueError('Accuracy mode requires an aisbench_task dataset binding')
     task = dataset.get('task')
@@ -170,44 +207,85 @@ def accuracy_dataset_for(dataset):
     if not (Path(directory).is_absolute() or PurePosixPath(directory.replace('\\', '/')).is_absolute()):
         raise ValueError('AISBench task dataset path must be absolute: '+directory)
     return dict(type='aisbench_task', task=task, path=directory, directory=directory,
-                file=spec['file'], dataset_abbr=spec['dataset_abbr'],
-                dataset_name=spec['dataset_name'], samples=spec['samples'])
+                layout=spec['layout'], file=spec.get('file'),
+                split_files=spec.get('split_files'), evaluated_split=spec.get('evaluated_split'),
+                dataset_abbr=spec['dataset_abbr'], dataset_name=spec['dataset_name'],
+                label=spec['label'])
 
 
 def accuracy_sample_count(dataset, case):
-    """Return the samples this accuracy case will infer and evaluate."""
-    full = dataset['samples']
+    """Return the samples this accuracy case will infer and evaluate.
+
+    The dataset's sample count is counted at runtime; when it is not yet known
+    only the lower bound is enforced and the caller checks the upper bound
+    against the counted data.
+    """
+    full = dataset.get('samples')
     requested = case.get('num_prompts')
     if requested is None:
+        if not isinstance(full, int) or isinstance(full, bool):
+            raise ValueError('Accuracy dataset sample count is unresolved; count the bound dataset first')
         return full
-    if (isinstance(requested, bool) or not isinstance(requested, int) or
-            not 1 <= requested <= full):
+    if isinstance(requested, bool) or not isinstance(requested, int) or requested < 1:
+        raise ValueError('Accuracy case num_prompts must be a positive integer')
+    if isinstance(full, int) and not isinstance(full, bool) and requested > full:
         raise ValueError(f'Accuracy case num_prompts must be an integer in [1, {full}]')
     return requested
 
 
+def _count_accuracy_rows(dataset):
+    """Count the evaluated native rows and return (data path, count)."""
+    spec = SUPPORTED_TASKS[dataset['task']]
+    directory = Path(dataset['directory'])
+    if spec['layout'] == 'single_csv':
+        path = directory/spec['file']
+        seen = 0
+        with path.open(encoding='utf-8-sig', newline='') as stream:
+            for row in csv.reader(stream):
+                if len(row) < 8:
+                    raise ValueError('AISBench task dataset row is truncated')
+                if row[7] == 'Question':
+                    continue
+                if len(row) < 12:
+                    raise ValueError('AISBench task dataset row lacks question and choices')
+                seen += 1
+        return path, seen
+    if spec['layout'] == 'split_jsonl':
+        for name in spec['split_files'].values():
+            if not (directory/name).is_file():
+                raise ValueError(f'AISBench task {dataset["task"]} requires {name} in {directory}')
+        path = directory/spec['split_files'][spec['evaluated_split']]
+        column = spec['reader_columns'][0]
+        seen = 0
+        with path.open(encoding='utf-8-sig') as stream:
+            for line in stream:
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except ValueError as error:
+                    raise ValueError('AISBench task dataset row is not valid JSON') from error
+                if (not isinstance(row, dict) or not isinstance(row.get(column), str) or
+                        spec['output_column'] not in row):
+                    raise ValueError('AISBench task dataset row lacks configured input/output columns')
+                seen += 1
+        return path, seen
+    raise ValueError('Unsupported AISBench accuracy dataset layout: '+repr(spec['layout']))
+
+
 def check_accuracy_dataset(dataset, num_prompts=None):
-    """Count native task rows with csv.reader; quoted newlines must not matter."""
-    path = Path(dataset['directory'])/dataset['file']
-    seen = 0
-    with path.open(encoding='utf-8-sig', newline='') as stream:
-        for row in csv.reader(stream):
-            if len(row) < 8:
-                raise ValueError('AISBench task dataset row is truncated')
-            if row[7] == 'Question':
-                continue
-            if len(row) < 12:
-                raise ValueError('AISBench task dataset row lacks question and choices')
-            seen += 1
-    if seen != dataset['samples']:
-        raise ValueError(f'AISBench task {dataset["task"]} requires {dataset["samples"]} samples; found {seen}')
-    requested = seen if num_prompts is None else accuracy_sample_count(dataset, {'num_prompts': num_prompts})
+    """Count the bound native task at runtime; data, not a constant, sets the bound."""
+    path, seen = _count_accuracy_rows(dataset)
+    requested = seen if num_prompts is None else accuracy_sample_count(
+        dict(dataset, samples=seen), {'num_prompts': num_prompts})
     return dict(type='aisbench_task', task=dataset['task'], path=str(path),
-                samples=seen, requested_samples=requested, status='CHECKED')
+                samples=seen, requested_samples=requested, status='CHECKED',
+                layout=dataset['layout'], split=dataset.get('evaluated_split'))
 
 
 def write_accuracy_config(spec, case, dataset, service, folder):
     """Generate a self-contained native accuracy config; no install mutation."""
+    task_spec = SUPPORTED_TASKS[dataset['task']]
     endpoint = urlsplit(service['endpoint'])
     if endpoint.scheme not in ('http', 'https') or not endpoint.hostname:
         raise ValueError('Invalid service endpoint')
@@ -217,28 +295,38 @@ def write_accuracy_config(spec, case, dataset, service, folder):
                   url=service['endpoint'].rstrip('/')+'/', max_out_len=case['max_out_len'],
                   batch_size=case['concurrency'], trust_remote_code=False,
                   generation_kwargs={'temperature': 0, 'ignore_eos': False})
+    imports = '\n'.join('from '+module+' import '+', '.join(names)
+                        for module, names in task_spec['imports'])
+    dataset_args = f'path={dataset["directory"]!r}'
+    if task_spec.get('file'):
+        dataset_args += f', name={task_spec["file"]!r}'
+    eval_parts = [f'evaluator=dict(type={task_spec["evaluator"]})']
+    if task_spec.get('pred_role'):
+        eval_parts.append(f'pred_role={task_spec["pred_role"]!r}')
+    if task_spec.get('pred_postprocessor'):
+        eval_parts.append('pred_postprocessor='+task_spec['pred_postprocessor'])
+    if task_spec.get('dataset_postprocessor'):
+        eval_parts.append('dataset_postprocessor='+task_spec['dataset_postprocessor'])
     config = folder/'aisbench-config.py'
     text = (
         'from mmengine.config import read_base\n'
         'with read_base():\n    from ais_bench.benchmark.configs.summarizers.example import summarizer\n'
         'from ais_bench.benchmark.models import VLLMCustomAPIChat\n'
-        'from ais_bench.benchmark.datasets import GPQADataset, GPQAEvaluator\n'
+        f'{imports}\n'
         'from ais_bench.benchmark.openicl.icl_prompt_template import PromptTemplate\n'
         'from ais_bench.benchmark.openicl.icl_retriever import ZeroRetriever\n'
         'from ais_bench.benchmark.openicl.icl_inferencer import GenInferencer\n'
         'from ais_bench.benchmark.partitioners import NaivePartitioner\n'
         'from ais_bench.benchmark.runners.local import LocalRunner\n'
         'from ais_bench.benchmark.tasks import OpenICLApiInferTask\n'
-        'from ais_bench.benchmark.utils.postprocess.text_postprocessors import first_option_postprocess\n'
         'datasets = [dict(\n'
-        f'    type=GPQADataset, abbr={dataset["dataset_abbr"]!r}, '
-        f'path={dataset["directory"]!r}, name={dataset["file"]!r},\n'
-        "    reader_cfg=dict(input_columns=['question', 'A', 'B', 'C', 'D'], output_column='answer'),\n"
+        f'    type={task_spec["dataset_class"]}, abbr={dataset["dataset_abbr"]!r}, {dataset_args},\n'
+        f'    reader_cfg=dict(input_columns={list(task_spec["reader_columns"])!r}, '
+        f'output_column={task_spec["output_column"]!r}),\n'
         '    infer_cfg=dict(\n'
-        f'        prompt_template=dict(type=PromptTemplate, template={GPQA_PROMPT!r}),\n'
+        f'        prompt_template=dict(type=PromptTemplate, template={task_spec["prompt"]!r}),\n'
         '        retriever=dict(type=ZeroRetriever), inferencer=dict(type=GenInferencer)),\n'
-        '    eval_cfg=dict(evaluator=dict(type=GPQAEvaluator),\n'
-        "                  pred_postprocessor=dict(type=first_option_postprocess, options='ABCD')))]\n"
+        '    eval_cfg=dict('+', '.join(eval_parts)+'))]\n'
         'models = [dict(type=VLLMCustomAPIChat, '+', '.join(f'{k}={v!r}' for k, v in fields.items())+')]\n'
         'infer = dict(partitioner=dict(type=NaivePartitioner), runner=dict(type=LocalRunner, '
         'max_num_workers=1, task=dict(type=OpenICLApiInferTask)))\n'
@@ -252,9 +340,12 @@ def write_config(spec, case, service, folder, *, check_files=True):
     """Generate the native config selected by the case mode."""
     if task_mode(case) == ACC_MODE:
         dataset = accuracy_dataset_for(spec['benchmark']['datasets'][case['dataset_id']])
-        accuracy_sample_count(dataset, case)
+        if case.get('num_prompts') is not None:
+            # The upper bound needs counted data; preflight enforces it in the
+            # tester namespace, here only the type and lower bound are known.
+            accuracy_sample_count(dataset, case)
         if check_files:
-            check_accuracy_dataset(dataset, case.get('num_prompts'))
+            dataset['samples'] = check_accuracy_dataset(dataset, case.get('num_prompts'))['samples']
         return write_accuracy_config(spec, case, dataset, service, folder)
     return write_perf_config(spec, case, service, folder, check_files=check_files)
 

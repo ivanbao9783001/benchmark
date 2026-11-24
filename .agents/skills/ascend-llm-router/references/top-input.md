@@ -29,7 +29,7 @@ existing 默认就在容器里，`container.self` 只用来标出“当前在哪
 | 用哪几张卡 | 必给 | 两侧必给 |
 | 什么模型、权重在哪 | 必给 | 两侧必给 |
 | 做什么（`action` / `topology` / `eval_mode`） | 必给 | 必给 |
-| 数据集（acc） | 可省：acc 固定 `gpqa` | 同左；路径按 tester 所在侧取证 |
+| 数据集（acc） | 可省：acc 缺省 `gpqa`，可选 `gsm8k` | 同左；路径按 tester 所在侧取证 |
 | 容器能否借用 | existing：必给，容器 id 可自证；owned：必给创建与删除授权 | existing：必给两侧容器归属，并给出对端 IP、对端容器 id 与 SSH 访问方式；owned：给 `deployment.image` 与创建/删除授权 |
 
 以下字段由执行方取证或派生，派单方不必提供；其余字段仍按 [contract.md](top-input/contract.md) 的级别判定。
@@ -89,7 +89,7 @@ existing 的 `self` 是节点标记，不是独立示例：单机示例即唯一
 
 - 机器派单：提交按示例填写的 top_input；授权与目标类缺失即拒绝，不进入 plan。
 - 自然语言派单：由当前 Agent 归一化为同等内容的 top_input，并一次性确认授权字段；不得从历史产物补全。
-- 若你是派单方，只需收齐授权与目标（卡、模型、任务、容器结论、双机 SSH；acc 数据集可省，默认 `gpqa`）；现场事实与派生项由接单方补齐，不要替它组装 plan/bindings。
+- 若你是派单方，只需收齐授权与目标（卡、模型、任务、容器结论、双机 SSH；acc 数据集可省，缺省 `gpqa`，也支持 `gsm8k`）；现场事实与派生项由接单方补齐，不要替它组装 plan/bindings。
 - `control.json` 不作为独立入口；由 `nodes` 段生成并保存在交付根 `<deliverables.local_dir>/<task.id>/`，每个 tasks 条目同时写 `root`（节点运行根）与 `task_root`（交付根）。
 - 交付根与节点运行根的结构、CLI 的 `destination` 约束与字段级别说明见 [contract.md](top-input/contract.md)。
 

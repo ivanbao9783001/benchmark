@@ -11,12 +11,17 @@ from .json_io import load_json
 from .protocol import ProtocolError
 
 
-def check_accuracy_imports():
-    """Require the native task classes so an AISBench version drift fails early."""
-    from ais_bench.benchmark.datasets import GPQADataset, GPQAEvaluator
-    from ais_bench.benchmark.utils.postprocess.text_postprocessors import first_option_postprocess
-    return dict(dataset=GPQADataset.__name__, evaluator=GPQAEvaluator.__name__,
-                postprocessor=first_option_postprocess.__name__)
+def check_accuracy_imports(task):
+    """Require the native task imports so an AISBench version drift fails early."""
+    import importlib
+    checked = []
+    for module_name, names in aisbench_cli.accuracy_imports(task):
+        module = importlib.import_module(module_name)
+        missing = [name for name in names if not hasattr(module, name)]
+        if missing:
+            raise ProtocolError('INVALID_INPUT: AISBench task import missing: '+', '.join(missing))
+        checked.extend(sorted(names))
+    return dict(task=task, imports=checked)
 
 
 def inspect_environment(tester,case,*,config_path=None):
@@ -37,7 +42,7 @@ def inspect_environment(tester,case,*,config_path=None):
     if aisbench_cli.task_mode(case) == aisbench_cli.ACC_MODE:
         data=aisbench_cli.accuracy_dataset_for(tester['datasets'][case['dataset_id']])
         dataset_evidence=aisbench_cli.check_accuracy_dataset(data, case.get('num_prompts'))
-        dataset_evidence['imports']=check_accuracy_imports()
+        dataset_evidence['imports']=check_accuracy_imports(data['task'])
     else:
         data=aisbench_cli.dataset_for({'datasets':tester['datasets']},case,check_files=True)
         if data.get('type')=='aisbench_synthetic':

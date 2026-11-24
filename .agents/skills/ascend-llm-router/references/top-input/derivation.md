@@ -32,5 +32,5 @@
 | `nodes.<id>.authorization`（未给出时） | `{preempt_other_processes:false, create_work_root:false}`；只约束节点运行根之外的根，任务自身运行根与交付根照常创建 |
 | `nodes.<id>.python`（未给出时） | `/usr/bin/python3`；先用它核验 `from jsonschema import Draft202012Validator` 成功再写回，失败按 validation.md 换已核验解释器 |
 | `nodes.<id>.container_work_root`（未给出时） | 容器内 `allowed_root` 的可写投影，唯一候选才采用、否则停止；取值写回 top_input，bindings 再逐字段投影 |
-| `evaluation.dataset.split/scope`（未给出时） | 派单只给数据集名或路径时派生：`gpqa_diamond` → `{id:"gpqa",split:"diamond",scope:"full"}`；“全量” → `full`；不得缩小 `scope`；子集限条数用 case `num_prompts` 表达，不改变 `scope` |
+| `evaluation.dataset.split/scope`（未给出时） | 派单只给数据集名或路径时派生：`gpqa_diamond` → `{id:"gpqa",split:"diamond",scope:"full"}`，`gsm8k` → `{id:"gsm8k",split:"test",scope:"full"}`；“全量” → `full`；不得缩小 `scope`；子集限条数用 case `num_prompts` 表达，不改变 `scope` |
 | `bindings.nodes.<n>.container_work_root`（未给出时） | 容器内 `allowed_root` 的可写投影；唯一候选才采用，否则停止；目录允许不存在 |

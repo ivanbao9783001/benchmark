@@ -66,7 +66,7 @@ control.json 是受信控制端配置，固定位于交付根 `task_root/control
 
 退出码已实现：输入/状态错误 2、通信未知 3、确认操作失败 4；退出码 0 只表示成功提交/查询/等待，业务成败仍以事件为准。
 
-普通响应预算 8 KiB、每页最多 10 关键事件；日志默认 8 KiB，显式最多 32 KiB，包含 JSON 转义与元数据。先按 artifact_ref 读取一次所需片段，再按 next_offset 续读；不从 SSH 获取整份服务日志。定位支持互斥的 --tail-bytes N、--line-start N --line-end M、--keyword TEXT；按返回的扫描游标续读。task.jsonl 为统一框架日志，service.json 为部署交接；results/ 与 logs/ 下只读相应证据，禁止目录遍历。它们都在节点运行根 `node_root`（existing 模式的原生产物在 `container_root`），交付根的 `results/` 只放摘要与引用。
+普通响应预算 8 KiB、每页最多 10 关键事件；日志默认 8 KiB，显式最多 32 KiB，包含 JSON 转义与元数据。先按 artifact_ref 读取一次所需片段，再按 next_offset 续读；不从 SSH 获取整份服务日志。定位支持互斥的 --tail-bytes N、--line-start N --line-end M、--keyword TEXT；按返回的扫描游标续读。task.jsonl 为统一框架日志，service.json 为部署交接（`endpoint` 记节点 IP；同机同容器可用 `127.0.0.1:<port>`，远端 tester 必须用节点 IP，回环不跨机）；results/ 与 logs/ 下只读相应证据，禁止目录遍历。它们都在节点运行根 `node_root`（existing 模式的原生产物在 `container_root`），交付根的 `results/` 只放摘要与引用。
 # Task cancellation clarification
 
 `scope=operation` requires the exact active `operation_id`. `scope=task` may omit

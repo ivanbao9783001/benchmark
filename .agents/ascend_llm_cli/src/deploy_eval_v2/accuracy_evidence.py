@@ -165,7 +165,7 @@ def summarize(folder, case, dataset, validated, *, deadline=None, cancelled=None
     if ratio >= TRUNCATION_LIMIT:
         reasons.append(OUTPUT_TRUNCATED)
         status = 'UNVERIFIED'
-    label = 'GPQA-Diamond' if dataset['task'] == 'gpqa_gen_0_shot_str' else dataset['dataset_name']
+    label = dataset.get('label') or dataset['dataset_name']
     scope = (f'{label} subset: first {num_samples}/{dataset_samples}; native evaluator metric; '
              'no baseline or gate' if subset else
              f'{label} full; native evaluator metric; no baseline or gate')

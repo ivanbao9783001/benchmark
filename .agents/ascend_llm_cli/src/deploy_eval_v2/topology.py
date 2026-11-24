@@ -255,7 +255,9 @@ def compile_deployment(dep, nodes):
                        GLOO_SOCKET_IFNAME=node['network']['interface'], TP_SOCKET_IFNAME=node['network']['interface'],
                        HCCL_SOCKET_IFNAME=node['network']['interface'])
             args = copy.deepcopy(launch['args'])
-            args.update(host=node['network']['ip'], port=ports['http'])
+            # Listen on all addresses so colocated testers can use loopback while
+            # remote peers keep using node.network.ip; HCCL/VLLM_HOST_IP stay on the bound IP.
+            args.update(host='0.0.0.0', port=ports['http'])
             args['served-model-name'] = dep['model']['served_name']
             if launch.get('preserve_reference'):
                 env = copy.deepcopy(launch.get('env',{}))

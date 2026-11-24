@@ -181,7 +181,8 @@
             },
             "task": {
               "enum": [
-                "gpqa_gen_0_shot_str"
+                "gpqa_gen_0_shot_str",
+                "gsm8k_gen_0_shot_cot_str"
               ]
             },
             "path": {

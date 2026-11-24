@@ -7,13 +7,13 @@ description: Deploy and Eval v2 的服务测试规划、结果证据分析与阶
 
 依赖 deploy-eval-v2 CLI 0.1 与协议 1.0，先执行 `deploy-eval-v2 --version` 核对。共享 CLI 契约随 ascend_llm_cli 包提供；未安装时按 [安装与前置](../ascend-llm-router/references/installation.md) 安装并复验，安装失败才停止报告，不用其他实现替代。自有服务支持绑定远端测试机，需发布冻结包并核对 machine_id、独立 Python 进程能力 和主节点到测试机的 SSH；外部服务的 runtime 在测试机运行。远端停止未核验时保留服务和资源声明，进入 RECOVERY_REQUIRED。缓存重置只适用于 owned 评测：须有冻结权限及逐实例目标，全部实例核验空闲后执行，结果不明不重试、不启动负载；external_eval 由 `prepare-inputs` 固定 `reset_cache=false`，因此外部服务不具备清缓存能力，不得承诺或尝试。原生汇总及稳态窗口会按证据判定；缺失时间戳、未知汇总格式或前缀路由覆盖不完整时保持 UNVERIFIED，不将请求成功写成性能有效。
 
-独立入口接受 endpoint+model 或部署产出的 service.json，加 cases 与 tester JSON；通过 plan 的 prepare-inputs 准备新评测任务，并重新健康检查，不继承部署任务释放权限。执行输入为 service handle 和一个冻结 case；不依赖 deploy 私有 dispatch.json。外部端点通过 external_eval 计划登记，不要求先 deploy，也不自动获得清缓存、重启、停止或释放权限。不用 fake-service 冒充外部服务。
+独立入口接受 endpoint+model 或部署产出的 service.json（`endpoint` 记节点 IP；同机同容器服务也可用 `127.0.0.1:<port>`，远端 tester 必须用节点 IP），加 cases 与 tester JSON；通过 plan 的 prepare-inputs 准备新评测任务，并重新健康检查，不继承部署任务释放权限。执行输入为 service handle 和一个冻结 case；不依赖 deploy 私有 dispatch.json。外部端点通过 external_eval 计划登记，不要求先 deploy，也不自动获得清缓存、重启、停止或释放权限。不用 fake-service 冒充外部服务。
 
 目标执行顺序：重新检查服务健康 → AISBench/数据核验 → 按 case.mode 分支：性能执行显式获授权的缓存操作、预热、正式测试与指标采集；精度执行原生全量推理与评测 → 自有客户端清理 → 原生结果及指标证据核验。每次使用阶段剩余时间，不能把多次调用各自的完整超时累加突破 deadline。
 
 保留用户显式负载；默认普通请求数为并发×4、稳态为×10。不得为演示减少请求数、改变端口或丢弃未知参数。记录合成长度及前缀偏差，不自动判失败，不把目标前缀比例写成缓存命中率。
 
-精度 case（`mode=acc`）与性能 case 同级：绑定 `type=aisbench_task` 的 `gpqa_gen_0_shot_str`，目录须含 `gpqa_diamond.csv` 且为全量 198 题；可选 `num_prompts`（1–198）走 AISBench `--num-prompts` 取前 N 条，mini 模板默认 30；配置不写 `test_range`、不做缓存重置或指标采集。命令为 `<aisbench> <config> --mode all --work-dir <case>/outputs`，有 `num_prompts` 时追加 `--num-prompts N`，只转发 AISBench 评测器返回的百分制 `accuracy`，并核验 predictions 有效样本数行、results JSON、infer/eval 日志与 summary；日志或 summary 缺失时 `accuracy_validity=UNVERIFIED`，但保留原值。子集结果须标注 subset，不可与全量对比。
+精度 case（`mode=acc`）与性能 case 同级：绑定 `type=aisbench_task` 的原生任务，当前支持 `gpqa_gen_0_shot_str`（目录含 `gpqa_diamond.csv`）与 `gsm8k_gen_0_shot_cot_str`（目录含 `train.jsonl` 与 `test.jsonl`，评测 `test.jsonl`）。样本数由预检在 tester 侧统计实际条数，不写死常量；可选 `num_prompts`（1..实际条数）走 AISBench `--num-prompts` 取前 N 条，mini 模板默认 30；配置不写 `test_range`、不做缓存重置或指标采集。命令为 `<aisbench> <config> --mode all --work-dir <case>/outputs`，有 `num_prompts` 时追加 `--num-prompts N`，只转发 AISBench 评测器返回的百分制 `accuracy`，并核验 predictions 有效样本数行、results JSON、infer/eval 日志与 summary；日志或 summary 缺失时 `accuracy_validity=UNVERIFIED`，但保留原值。子集结果须标注 subset，不可与全量对比。
 
 分析时分别给出 execution_status、evidence_status，以及按 `evaluation_type` 选择的 performance_validity 或 accuracy_validity。性能分支检查 AISBench 退出码、预期模型×数据集结果组、请求数量/成功状态、worker 日志和稳态窗口；精度分支检查预测行数、原生 results、日志存在性，以及输出截断率（达到 max_out_len 的样本占比）。请求完成但没有有效稳态窗口可为 SUCCEEDED + UNVERIFIED；未知指标不填零。
 

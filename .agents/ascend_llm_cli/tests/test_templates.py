@@ -17,6 +17,7 @@ SITE_BINDINGS = {
     "gpu.0": "6",
     "gpu.1": "7",
     "dataset.gpqa.root": "/home/baoyifan/dataset/gpqa",
+    "dataset.gsm8k.root": "/home/baoyifan/dataset/gsm8k",
 }
 
 
@@ -56,6 +57,11 @@ class TemplateTest(unittest.TestCase):
         validator("external-eval-plan.schema.json", "case").validate(case)
         self.assertEqual(case["num_prompts"], 30)
 
+    def test_acc_gsm8k_mini_case_matches_schema(self):
+        case = load("eval-acc-gsm8k-mini.case.json")
+        validator("external-eval-plan.schema.json", "case").validate(case)
+        self.assertEqual((case["dataset_id"], case["num_prompts"]), ("gsm8k", 30))
+
     def test_perf_case_matches_schema(self):
         validator("external-eval-plan.schema.json", "case").validate(load("eval-perf-synthetic.case.json"))
 
@@ -73,6 +79,7 @@ class TemplateTest(unittest.TestCase):
 
     def test_dataset_binding_matches_schema_after_fill(self):
         validator("eval-bindings.schema.json", "dataset").validate(fill(load("dataset-aisbench-task.json")))
+        validator("eval-bindings.schema.json", "dataset").validate(fill(load("dataset-aisbench-gsm8k.json")))
         validator("eval-bindings.schema.json", "dataset").validate(load("dataset-synthetic.json"))
 
     def test_templates_carry_no_site_values(self):

@@ -610,8 +610,7 @@
         },
         "num_prompts": {
           "type": "integer",
-          "minimum": 1,
-          "maximum": 198
+          "minimum": 1
         },
         "concurrency": {
           "type": "integer",

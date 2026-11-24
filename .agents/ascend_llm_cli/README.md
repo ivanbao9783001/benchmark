@@ -8,7 +8,7 @@
 - 只评测：接受 endpoint + model，或已有 service.json；核验测试工具、依赖及服务健康，运行 AISBench 性能或精度测试并输出结构化结果。不需要部署配置，也不取得停止外部服务的权限。
 - 部署后评测：把 service.json 交给一个独立评测任务，可使用新的 case 和测试环境，不必重新部署。
 - release/cancel：按归属释放本任务资源。停止 runtime 不等于释放服务。
-- 精度评测与性能评测是同级 `mode`：`perf` 跑性能负载，`acc` 只支持 AISBench 原生 `gpqa_gen_0_shot_str`（GPQA-Diamond 全量 198 题）并报告 `accuracy`；不把健康或冒烟测试视为精度评测。
+- 精度评测与性能评测是同级 `mode`：`perf` 跑性能负载，`acc` 支持 AISBench 原生任务目录（GPQA-Diamond `gpqa_gen_0_shot_str`、GSM8K `gsm8k_gen_0_shot_cot_str`）并报告 `accuracy`；不把健康或冒烟测试视为精度评测。
 
 ## 安装
 
@@ -53,7 +53,7 @@ deploy-eval-v2 --version
 {"stage":"eval","destination":"prepared-acc","task_id":"acc-01","endpoint":"http://node.example:8000","model":"served-model","tester":{"host":"node.example","work_root":"/work/tasks","python":"/venv/bin/python","aisbench":"/venv/bin/ais_bench","model_path":"/models/tokenizer","datasets":{"gpqa":{"type":"aisbench_task","task":"gpqa_gen_0_shot_str","path":"/data/datasets/gpqa"}}},"cases":[{"case_id":"gpqa_diamond_acc","mode":"acc","dataset_id":"gpqa","concurrency":8,"max_out_len":512,"timeout_seconds":3600}]}
 ```
 
-`path` 必须是包含 `gpqa_diamond.csv` 的绝对目录；样本数缺省为 198，case 可写 `num_prompts`（1–198）走 `--num-prompts` 取前 N 条（mini 模板默认 30，结果标注 subset 且不可与全量对比）；命令固定 `--mode all`，不写 `test_range`、不重置缓存、不采集性能指标。结果报告 AISBench 评测器返回的 `accuracy`（百分制）与 `accuracy_validity`。
+`path` 必须是数据集绝对目录：GPQA 含 `gpqa_diamond.csv`，GSM8K 含 `train.jsonl` 与 `test.jsonl`。样本数由预检在测试机现场统计，不在代码或 schema 写死；case 可写 `num_prompts` 走 `--num-prompts` 取前 N 条（不得超过实际条数；mini 模板默认 30，结果标注 subset 且不可与全量对比）；命令固定 `--mode all`，不写 `test_range`、不重置缓存、不采集性能指标。结果报告 AISBench 评测器返回的 `accuracy`（百分制）与 `accuracy_validity`。
 
 ```bash
 deploy-eval-v2 prepare-inputs --request task.json
