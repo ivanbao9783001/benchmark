@@ -1,6 +1,8 @@
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch,Mock
+from deploy_eval_v2 import identity as machine_identity
 from deploy_eval_v2.executor_factory import build_executor
 from deploy_eval_v2.protocol import ProtocolError
 from test_plan_model import external_plan,eval_bindings
@@ -8,6 +10,17 @@ from test_launcher import identity
 
 
 class ExecutorFactoryTests(unittest.TestCase):
+    def test_empty_control_machine_id_is_derived_from_the_hostname(self):
+        from deploy_eval_v2.executor_factory import local_machine_id
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'machine-id'
+            path.write_text('',encoding='ascii')
+            with patch('deploy_eval_v2.executor_factory.os.name','posix'),\
+                 patch.object(machine_identity,'MACHINE_ID_PATH',path),\
+                 patch.object(machine_identity.socket,'gethostname',return_value='pd-existing-p4'):
+                self.assertEqual(local_machine_id(),
+                                 machine_identity.derive_hostname_id('pd-existing-p4'))
+
     def test_remote_tester_selects_supervised_adapter(self):
         root=str(Path('/work/t'))
         tester=dict(machine_id='e'*32,host='tester',work_root='/tests',python='/python')

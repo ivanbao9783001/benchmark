@@ -35,8 +35,8 @@
 | `deployment` 顶层：`schema_version`、`task_id`、`intent`、`id`、`topology`、`model`、`endpoint`、`connections`（必填，可为 `{}`），以及 `instances` 数组 | 字段语义见 references/plan-contract.md；结构由 `export-contracts` 导出；`instances[0]` 由启动档模板填充 |
 | `policy`、`execution`（超时、重试、空闲动作） | 按授权与需求确定，不是模板默认值 |
 | `unresolved` | 必填数组：只放授权与目标类中无法推断的项；现场事实与模板/派生默认值不得进入，冻结前必须为空。采用的缺省值写进审阅摘要 |
-| `bindings` 全部（host、work_dir、machine_id、model_paths、mounts、network、ports） | 现场发现并取证，禁止跨机复制；借用容器时改为 `container` 与 `container_work_root`，不写 `mounts` |
-| `tester`（host、python、aisbench、datasets、machine_id） | 现场发现；`machine_id` 是 check-ready 的硬门槛；数据集绑定模板只提供 `datasets` 里的一个条目 |
+| `bindings` 全部（host、work_dir、machine_id、model_paths、mounts、network、ports） | 现场发现并取证，禁止跨机复制；`machine_id` 用 `deploy-eval-v2 identity` 在目标节点取证；借用容器时改为 `container` 与 `container_work_root`，不写 `mounts` |
+| `tester`（host、python、aisbench、datasets、machine_id） | 现场发现；`machine_id` 用 `deploy-eval-v2 identity` 取证，是 check-ready 的硬门槛；数据集绑定模板只提供 `datasets` 里的一个条目 |
 
 组装完成后：独立部署（`deploy_only`）或独立测试（`eval_only`）先用 `prepare-inputs` 校验，再进入 draft-review；`deploy_and_eval` 不经过 `prepare-inputs`，直接进入 draft-review（schema 与摘要校验等价）。schema 缺项会拒绝，但不要依赖报错来发现缺块。
 

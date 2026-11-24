@@ -240,6 +240,18 @@
               "self": {
                 "type": "boolean",
                 "description": "This node is the control node and the borrowed container is the one the control process itself runs in: no SSH and no docker CLI. At most one node may set it and it must exist in runtime.mode=existing_container."
+              },
+              "device_id_map": {
+                "description": "Operator-confirmed host physical NPU ID to borrowed-container logical ID mapping, established by a runtime probe. Placement, claims and occupancy probes stay physical; only the container device selection uses logical IDs. Only valid for runtime.mode=existing_container.",
+                "type": "object",
+                "minProperties": 1,
+                "propertyNames": {
+                  "pattern": "^(0|[1-9][0-9]*)$"
+                },
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0
+                }
               }
             },
             "description": "Borrowed existing container; only for runtime.mode=existing_container. Identity is verified before any effect and the container is never created, started or removed."

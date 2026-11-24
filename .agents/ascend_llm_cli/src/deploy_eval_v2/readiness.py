@@ -2,28 +2,44 @@
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from .compiler import verify_frozen
+from .device_map import parse_chip_logic_map, validate_device_map
 from .publication import install_archive
 from .publication_cli import task_binding,publication_targets
 from .protocol import ProtocolError,envelope
 from .remote_guard import resolve_guard_root
+from .topology import node_physical_devices
+from .identity import resolve_identity
 
 
 def local_machine_id():
-    """The control station's identity; a self container must report it too."""
-    if os.name!='posix':
-        return None
+    """The control station's identity: /etc/machine-id or the hostname fallback."""
     try:
-        value=Path('/etc/machine-id').read_text(encoding='ascii').strip()
-    except (OSError,UnicodeError):
+        return resolve_identity()['machine_id']
+    except ProtocolError:
         return None
-    return value if re.fullmatch('[a-f0-9]{32}',value) else None
 
 
 def control_is_posix():
     return os.name=='posix'
+
+
+def read_local_chip_logic_map():
+    """Probe this node's NPU numbering; None when npu-smi is absent or unusable."""
+    try:
+        result=subprocess.run(['npu-smi','info','-m'],capture_output=True,text=True,timeout=30)
+    except (OSError,subprocess.SubprocessError):
+        return None
+    if result.returncode:
+        return None
+    try:
+        observed=parse_chip_logic_map(result.stdout)
+    except ValueError:
+        return None
+    return observed or None
 
 
 def task_root_writable(path):
@@ -98,7 +114,34 @@ def check_ready(request,config):
             require(binding.get('self') is True,'CONTROL_ENTRY_SELF_REQUIRED')
             require(control_is_posix(),'SELF_CONTROL_REQUIRES_POSIX')
             if control_is_posix() and len(self_slots)==1:
-                require(local_machine_id()==machine(bound['nodes'][self_slots[0]]),'SELF_MACHINE_ID_MISMATCH')
+                local=local_machine_id()
+                if local is not None:
+                    require(local==machine(bound['nodes'][self_slots[0]]),'SELF_MACHINE_ID_MISMATCH')
+        declared={slot:bound['nodes'][slot]['container']['device_id_map'] for slot in slots
+                  if isinstance(bound['nodes'][slot].get('container'),dict)
+                  and 'device_id_map' in bound['nodes'][slot]['container']}
+        if declared:
+            existing=(plan['deployment'].get('runtime',{}).get('mode','owned_container')=='existing_container')
+            require(existing,'DEVICE_ID_MAP_INVALID')
+            devices=node_physical_devices(plan['deployment'])
+            valid=True
+            for slot,mapping in declared.items():
+                try:
+                    validate_device_map(mapping,devices.get(slot,set()))
+                except ValueError:
+                    valid=False
+            require(valid,'DEVICE_ID_MAP_INVALID')
+            if existing and valid:
+                # Only the local node can be probed offline; remote maps stay for
+                # the create pre-check to confirm on their own host.
+                for slot in declared:
+                    if slot not in self_slots:
+                        continue
+                    observed=read_local_chip_logic_map()
+                    if observed is None:
+                        require(False,'DEVICE_ID_MAP_UNVERIFIABLE')
+                    elif any(observed.get(int(key))!=value for key,value in declared[slot].items()):
+                        require(False,'DEVICE_ID_MAP_MISMATCH')
         evaluation=plan.get('evaluation')
         if evaluation:
             tester=bound['testers'][evaluation['test_binding']]

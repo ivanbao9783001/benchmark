@@ -4,6 +4,7 @@ No SSH or Docker side effects. Node-local execution retains the existing lifecyc
 """
 import copy
 import re
+from .device_map import validate_device_map
 
 
 def context_limit(args):
@@ -38,53 +39,39 @@ def producer_identity_warnings(dep):
 
 
 
-def container_device_id_map(dep):
-    """Validate an operator-confirmed physical -> container-logical mapping.
-
-    No inference from --device order: the runtime/image must be probed first.
-    Legacy plans without a map retain their original selection semantics.
-    """
-    container = dep.get('runtime', {}).get('container', {})
-    mapping = container.get('device_id_map')
-    if mapping is None:
-        return None
-    if not isinstance(mapping, dict) or not mapping:
-        raise ValueError('device_id_map must be a non-empty physical-to-logical map')
-    if container.get('privileged') is not False:
-        raise ValueError('device_id_map requires non-privileged device isolation')
-    if any(not isinstance(k, str) or not re.fullmatch(r'0|[1-9][0-9]*', k)
-           or type(v) is not int or v < 0 for k, v in mapping.items()):
-        raise ValueError('device_id_map requires canonical physical IDs and non-negative logical IDs')
-    physical = {int(k) for k in mapping}
-    if sorted(mapping.values()) != list(range(len(mapping))):
-        raise ValueError('device_id_map logical IDs must be unique and contiguous from zero')
-    nodes = container.get('devices', [])
-    # Reject Docker source:target remapping here rather than misinterpreting it.
-    if any(not isinstance(node, str) or ':' in node for node in nodes):
-        raise ValueError('device_id_map requires explicit unremapped device paths')
-    mapped = {int(match[1]) for node in nodes
-              if (match := re.fullmatch(r'/dev/davinci(0|[1-9][0-9]*)', node))}
-    if mapped != physical:
-        raise ValueError('device_id_map must exactly cover explicitly mapped physical NPU devices')
+def node_physical_devices(dep):
+    """Physical NPU IDs placed on each node; proxies claim no model devices."""
     by_node = {}
     for item in dep['instances']:
         if item['role'] != 'proxy':
             by_node.setdefault(item['placement']['node'], set()).update(item['placement']['devices'])
-    if not by_node or any(devices != physical for devices in by_node.values()):
-        raise ValueError('device_id_map devices must exactly match physical placement on each model node')
-    return mapping
+    return by_node
+
+
+def normalize_device_maps(dep, device_maps):
+    """Validate operator-confirmed maps per node; placement and claims stay physical."""
+    by_node = node_physical_devices(dep)
+    maps, errors = {}, []
+    for node, mapping in (device_maps or {}).items():
+        if node not in by_node:
+            errors.append('device_id_map declared for a node without model placement: '+node)
+            continue
+        try:
+            maps[node] = validate_device_map(mapping, by_node[node])
+        except ValueError as exc:
+            errors.append(str(exc)+': '+node)
+    return maps, errors
 
 
 def logical_devices(placement, mapping):
-    return [mapping[str(device)] for device in placement['devices']] if mapping is not None else placement['devices']
+    return [mapping[device] for device in placement['devices']] if mapping is not None else placement['devices']
 
 
-def validate_deployment(dep):
+def validate_deployment(dep, device_maps=None):
     errors = []
-    try:
-        device_map = container_device_id_map(dep)
-    except ValueError as exc:
-        return [str(exc)]
+    maps, map_errors = normalize_device_maps(dep, device_maps)
+    if map_errors:
+        return map_errors
     instances = {i['id']: i for i in dep['instances']}
     if len(instances) != len(dep['instances']):
         errors.append('Duplicate instance ID')
@@ -117,7 +104,7 @@ def validate_deployment(dep):
         except ValueError as exc:
             errors.append(str(exc)+': '+item['id'])
         physical_visible = ','.join(map(str, place['devices']))
-        visible = ','.join(map(str, logical_devices(place, device_map)))
+        visible = ','.join(map(str, logical_devices(place, maps.get(place['node']))))
         selection = {'device-ids': args['device-ids']} if 'device-ids' in args else {}
         selection.update({k:v for k,v in item['launch'].get('env',{}).items()
                           if k in ('ASCEND_RT_VISIBLE_DEVICES','ASCEND_VISIBLE_DEVICES')})
@@ -190,12 +177,16 @@ def cli_args(values):
     return result
 
 
-def compile_deployment(dep, nodes):
-    """nodes keyed by logical slot contain network, per-instance ports and paths."""
-    errors = validate_deployment(dep)
+def compile_deployment(dep, nodes, device_maps=None):
+    """nodes keyed by logical slot contain network, per-instance ports and paths.
+
+    ``device_maps`` maps a node slot to its operator-confirmed physical-to-logical
+    NPU map. It is only used for the container selection; placement stays physical.
+    """
+    errors = validate_deployment(dep, device_maps)
     if errors:
         raise ValueError('; '.join(errors))
-    device_map = container_device_id_map(dep)
+    maps, _ = normalize_device_maps(dep, device_maps)
     instances = {i['id']: i for i in dep['instances']}
     addresses = {}
     allocated = set()
@@ -261,12 +252,15 @@ def compile_deployment(dep, nodes):
             args['served-model-name'] = dep['model']['served_name']
             if launch.get('preserve_reference'):
                 env = copy.deepcopy(launch.get('env',{}))
+            node_map = maps.get(placement['node'])
             # Preserve explicit selection mechanism and spelling. Only an absent
             # selection uses the legacy default for its launch mode.
+            # ASCEND_VISIBLE_DEVICES is a physical container selector and must not
+            # suppress the logical selection the declared map requires.
             has_selection = 'device-ids' in args or 'ASCEND_RT_VISIBLE_DEVICES' in env or (
-                device_map is None and 'ASCEND_VISIBLE_DEVICES' in env)
+                node_map is None and 'ASCEND_VISIBLE_DEVICES' in env)
             if not has_selection:
-                visible=','.join(map(str, logical_devices(placement, device_map)))
+                visible=','.join(map(str, logical_devices(placement, node_map)))
                 if launch.get('preserve_reference'):
                     env['ASCEND_RT_VISIBLE_DEVICES']=visible
                 else:

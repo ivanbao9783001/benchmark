@@ -29,6 +29,7 @@
 | `nodes.<id>.paths` | 事实 | proxy 所在节点必填 | 供 bindings 的 `paths`；proxy 节点必须有 `proxy_program` |
 | `nodes.<id>.container` | 事实 | 借用已有容器时必填；`self` 节点 `id` 可自证，非 `self` 节点必须由派单方给出完整 id；`image` 可现场取证 | `{id, image}`，当前所在容器再加 `self: true`：运行中的容器完整 64 位 ID；`image` 为 `sha256:` 镜像摘要，`self=true` 时可省略（容器内无 docker，无法核验）；只有 `existing_container` 使用。`NetworkMode`、NPU 可见性：`self` 节点本地核对，其余节点由 `docker inspect` 核验，不另设字段 |
 | `nodes.<id>.container.self` | 授权 | `existing_container` 必填 | 只能写 `true`：标记控制进程当前所在的容器。该节点必须是 `task.control_node`，全任务恰好一个（单机即唯一节点，双机 PD 即当前所在节点）。该节点与控制进程同容器，本地执行，不经 SSH 与 docker；其余 existing 节点仍经 SSH + docker。`id` 必须自证；`image` 可省略，给出但无法核验时证据记 `UNVERIFIED` |
+| `nodes.<id>.container.device_id_map` | 事实 | 仅借用容器且物理卡与容器逻辑号不一致时 | `{宿主物理NPU号: 容器逻辑号}`。`placement.devices`、`npu_ids`、资源声明、占用检查与 `npu-smi` 探测始终按宿主物理号；只有 `ASCEND_RT_VISIBLE_DEVICES`/`device-ids` 使用逻辑号。键须恰好覆盖该节点本次 placement 的物理卡，逻辑号从 0 连续且唯一；仅 `existing_container` 允许，owned 出现即拒绝，`src:dst` 写法拒绝。必须来自现场 `npu-smi info -m` 探针，不得按 `--device` 顺序推断；`check-ready` 与 create 前置都会核对 `Chip Logic ID` |
 | `nodes.<id>.container_work_root` | 事实 | 借用已有容器时必填；派单方未给时由执行方按派生表取值并写回 top_input | 容器内可写根，POSIX 绝对路径且不含 `:`；未给出时取容器内 `allowed_root` 的可写投影，唯一候选才采用、否则停止；目录允许不存在、由执行/发布时创建；脚本、日志与原始 results 位于容器运行根 `container_root = <container_work_root>/<task.id>` |
 | `nodes.<id>.authorization` | 授权 | 含部署的动作 | `{preempt_other_processes, create_work_root}`，按主机生效；派单方未给时执行方按两项 `false` 写回并在 `limitations` 声明。**不是 CLI 字段**：CLI 无同名参数，它只授权 agent 的现场动作（是否可结束他人在跑的进程、是否可创建可写根），不进入 plan/bindings。派单给出 `deliverables.local_dir` 即视为允许创建交付根 `task_root = local_dir/<task.id>` 及其子目录；节点运行根仍需 `create_work_root=true`。仍不得创建授权外的根。该授权以输入核对通过为前提：判定为缺口或目标目录不可写而停止时，不得创建任何交付根或运行根 |
 
@@ -50,7 +51,7 @@
 
 | 字段 | 级别 | 必填条件 | 说明 |
 | --- | --- | --- | --- |
-| `evaluation.tester` | 需求 | action 含评测 | `{host, work_root, python, aisbench, model_path, machine_id, host_python, datasets}`，与 bindings 的 testers 同形；`machine_id` 虽是可选 schema 字段，但 `validate-top-input` 与 check-ready 都会硬性拒绝缺失值（32 位小写十六进制），必须现场取证（`/etc/machine-id`，容器内为空时按派生表回退顺序读取）；`environment` 为可选的环境变量映射，作用于 preflight、AISBench 与 postflight 子进程；容器内测试再加 `container={id,image?}` 与 `container_work_root`；`self` 节点可省略 `image`，非 self 节点仍须给出摘要；`host` 与节点同语义（self 填本机 hostname 或 IP，非 self 填 SSH 目标）。同机测试的缺省值可先按派生表补齐，但补齐结果必须显式写回 top_input：`host`/`work_root`/`python`/`aisbench`/`model_path`/`datasets`/`machine_id` 任一缺失都会被 `validate-top-input` 拒绝；测试在容器内时 `container` 与 `container_work_root` 也必须显式写出（同机也一样），给出 `container` 而未给 `container_work_root` 即拒绝 |
+| `evaluation.tester` | 需求 | action 含评测 | `{host, work_root, python, aisbench, model_path, machine_id, host_python, datasets}`，与 bindings 的 testers 同形；`machine_id` 虽是可选 schema 字段，但 `validate-top-input` 与 check-ready 都会硬性拒绝缺失值（32 位小写十六进制），必须在目标节点运行 `deploy-eval-v2 identity` 取证（优先 `/etc/machine-id`，为空时用 hostname 派生）；`environment` 为可选的环境变量映射，作用于 preflight、AISBench 与 postflight 子进程；容器内测试再加 `container={id,image?}` 与 `container_work_root`；`self` 节点可省略 `image`，非 self 节点仍须给出摘要；`host` 与节点同语义（self 填本机 hostname 或 IP，非 self 填 SSH 目标）。同机测试的缺省值可先按派生表补齐，但补齐结果必须显式写回 top_input：`host`/`work_root`/`python`/`aisbench`/`model_path`/`datasets`/`machine_id` 任一缺失都会被 `validate-top-input` 拒绝；测试在容器内时 `container` 与 `container_work_root` 也必须显式写出（同机也一样），给出 `container` 而未给 `container_work_root` 即拒绝；`eval_only` 同样适用：控制端与 tester 同容器时 runtime 以 `machine_id` + `/.dockerenv` 判定本地执行，`container.id` 即当前容器，`image` 可省略 |
 | `evaluation.dataset` | 需求 | `eval_mode=acc` | `{id, split, scope}`；acc 当前支持 `gpqa`（`gpqa_gen_0_shot_str`）与 `gsm8k`（`gsm8k_gen_0_shot_cot_str`）。精度证据按有效样本数校验：预检在 tester 侧统计实际条数，case `num_prompts=N` 时按 N 并标注 subset，上限按实际条数运行时校验（不写死 198）。派单未写数据集时按模板默认 `id=gpqa` 继续，**不得因此提问或列为缺口**；派单给出这两个之外的数据集时停止并说明不支持，不得以 gpqa 顶替继续；`split/scope` 可由数据集名与“全量”派生。数据集路径属现场事实，必须在 tester 所在节点/容器内取证（多节点时不在控制机取证）；`perf` 省略，不写 `null` |
 | `evaluation.service` | 需求 | `action=eval_only` | `{service_id?, endpoint, model, health_path?}`；key 名是 `service_id`，写 `id` 会被静默忽略。省略时由 CLI 按 endpoint+model 派生；其余 action 禁用 |
 | `evaluation.params` | 覆盖 | 可选 | **不是 CLI 字段**：`prepare-inputs` 不读取它，agent 必须把这些覆盖物化进 `cases[]`（键名须为该 case 已声明字段，例如精度的 `num_prompts`），并在审阅摘要中标为用户显式值 |
@@ -99,7 +100,7 @@ PD 的连接由 agent 派生，不在 top_input 表达：`kv_transfer` 覆盖所
 
 existing 中 `container.self` 只描述当前所在容器，不是“同机不同容器”的独立形态：该节点与控制进程同容器，控制→runtime 与 runtime→容器都走本地；其余节点不变，仍按 existing 经 SSH 与 docker exec。runtime 会用 `/.dockerenv` 自证在容器内，缺失即失败；镜像摘要无法复核，证据标 `UNVERIFIED`。
 
-`container.self` 节点的 `allowed_root`、`guard_root`、`container_work_root`、`deliverables.local_dir` 以及节点运行根 `node_root = allowed_root/task.id` 一律按**容器内路径**填写，`evaluation.tester.work_root` 与 `allowed_root` 保持一致。宿主路径与容器内路径不同时填宿主路径，会在 `check-ready` 的本地 root 绑定比对处失败。existing 的节点与容器内 tester 的 `machine_id` 取容器内 `/etc/machine-id`，不是宿主值；owned 取宿主值。
+`container.self` 节点的 `allowed_root`、`guard_root`、`container_work_root`、`deliverables.local_dir` 以及节点运行根 `node_root = allowed_root/task.id` 一律按**容器内路径**填写，`evaluation.tester.work_root` 与 `allowed_root` 保持一致。宿主路径与容器内路径不同时填宿主路径，会在 `check-ready` 的本地 root 绑定比对处失败。existing 的节点与容器内 tester 的 `machine_id` 按统一身份链在容器内取证（优先 `/etc/machine-id`，为空时 hostname 派生），不是宿主值；owned 取宿主值。
 
 ## 任务目录（交付根与运行根分离）
 

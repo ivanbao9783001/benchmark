@@ -151,3 +151,46 @@ class RuntimeTests(unittest.TestCase):
             finish(runtime)
             self.assertTrue(runtime.task_cancelled)
             self.assertEqual(runtime.state, 'CANCELLED')
+
+    def test_operation_failed_without_error_code_is_augmented(self):
+        with tempfile.TemporaryDirectory() as root:
+            runtime = Runtime(root, 't', FakeExecutor())
+            with runtime.lock:
+                event = runtime._emit('operation.failed', 'op-b', 'RECOVERY_REQUIRED',
+                                      dict(cleanup_status='UNVERIFIED'))
+            self.assertEqual(event['data']['error_code'], 'RECOVERY_REQUIRED')
+            self.assertTrue(event['data']['phase'])
+            self.assertTrue((Path(root)/event['data']['evidence_ref']).exists())
+
+    def test_terminal_emit_failure_keeps_cancel_thread_alive(self):
+        class Executor:
+            def cancel_idle(self, operation):
+                return 'operation.failed', 'RECOVERY_REQUIRED', dict(cleanup_status='BOGUS', claims_released=False)
+        with tempfile.TemporaryDirectory() as root:
+            runtime = Runtime(root, 't', Executor())
+            runtime.submit(command('cancel', runtime.version, 'c1', scope='task'))
+            finish(runtime)
+            self.assertEqual(runtime.state, 'RECOVERY_REQUIRED')
+            terminal = [e for e in runtime.journal.events
+                        if e['type'] in ('operation.failed', 'operation.cancelled')]
+            self.assertEqual(len(terminal), 1)
+            self.assertEqual(terminal[0]['data']['error_code'], 'RECOVERY_REQUIRED')
+            self.assertEqual(terminal[0]['data']['cleanup_status'], 'UNVERIFIED')
+            self.assertEqual(terminal[0]['data']['phase'], 'cancel')
+            self.assertEqual(terminal[0]['data']['evidence_ref'], 'task.jsonl')
+            self.assertIn('terminal event publish failed', (Path(root)/'task.jsonl').read_text())
+            self.assertIsNone(Runtime(root, 't', Executor()).active)
+
+    def test_terminal_emit_failure_keeps_execution_thread_alive(self):
+        def executor(*args):
+            return 'operation.failed', 'FAILED', dict(error_code='DEPLOYMENT_FAILED', cleanup_status='BOGUS')
+        with tempfile.TemporaryDirectory() as root:
+            runtime = Runtime(root, 't', executor)
+            runtime.submit(command(plan_ref='frozen'))
+            finish(runtime)
+            self.assertEqual(runtime.state, 'RECOVERY_REQUIRED')
+            terminal = [e for e in runtime.journal.events
+                        if e['type'] in ('operation.failed', 'operation.cancelled')]
+            self.assertEqual(len(terminal), 1)
+            self.assertEqual(terminal[0]['data']['error_code'], 'RECOVERY_REQUIRED')
+            self.assertIn('terminal event publish failed', (Path(root)/'task.jsonl').read_text())

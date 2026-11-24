@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import Mock, patch
 from deploy_eval_v2.deploy_scripts import compile_service_scripts
 from deploy_eval_v2.deployment_compiler import compile_bound_deployment
+from deploy_eval_v2.compiler import digest
 from deploy_eval_v2.existing_container_node import STOP_SCRIPT, ExistingContainerNode
 from deploy_eval_v2.json_io import load_json
 from deploy_eval_v2.node_worker import dispatch
@@ -18,6 +19,14 @@ from test_deployment_model import deploy_plan
 
 CID = 'a'*64
 IMAGE = 'sha256:'+'b'*64
+
+
+def chip_map(*rows):
+    """Render `npu-smi info -m` rows as the container reports them."""
+    lines = [b'\tNPU ID  Chip ID  Chip Logic ID  Chip Name']
+    lines += [('\t'+str(npu)+'  0  '+str(logic)+'  Ascend 910B4').encode()
+              for npu, logic in rows]
+    return b'\n'.join(lines)+b'\n'
 
 
 def owned_bindings():
@@ -144,7 +153,7 @@ class ExistingContainerNodeTests(unittest.TestCase):
     def test_create_inspects_and_never_creates_or_starts_a_container(self):
         with tempfile.TemporaryDirectory() as folder:
             inspect = json.dumps(dict(Id=CID, Image=IMAGE, Running=True)).encode()
-            runner = Mock(side_effect=[(1, b'', b''), (0, inspect, b''), (0, b'', b'')])
+            runner = Mock(side_effect=[(1, b'', b''), (0, b'', b''), (0, inspect, b''), (0, b'', b'')])
             node, _ = self.node(folder, runner)
             group = dict(npu_ids=[0], ports=[], root=str(Path(folder)/'task'),
                          container_root='/workspace/tasks/t')
@@ -152,12 +161,83 @@ class ExistingContainerNodeTests(unittest.TestCase):
             self.assertEqual(result['container_id'], CID)
             calls = [call.args[0] for call in runner.call_args_list]
             self.assertEqual(calls[0][0], 'fuser')
-            self.assertIn('inspect', calls[1])
-            self.assertEqual(calls[2][:4], ['docker', 'exec', CID, 'mkdir'])
+            self.assertEqual(calls[1], ['docker', 'exec', CID, 'npu-smi', 'info', '-m'])
+            self.assertIn('inspect', calls[2])
+            self.assertEqual(calls[3][:4], ['docker', 'exec', CID, 'mkdir'])
             for argv in calls:
                 self.assertNotIn('create', argv)
                 self.assertNotIn('start', argv)
                 self.assertNotIn('rm', argv)
+
+    def test_declared_device_map_is_verified_against_the_container(self):
+        with tempfile.TemporaryDirectory() as folder:
+            inspect = json.dumps(dict(Id=CID, Image=IMAGE, Running=True)).encode()
+            runner = Mock(side_effect=[(1, b'', b''), (1, b'', b''),
+                                       (0, chip_map((5, 0), (6, 1)), b''),
+                                       (0, inspect, b''), (0, b'', b'')])
+            node, guard = self.node(folder, runner)
+            group = dict(npu_ids=[5, 6], ports=[], root=str(Path(folder)/'task'),
+                         container_root='/workspace/tasks/t',
+                         device_id_map={'5': 0, '6': 1})
+            node.create('create1', group, time.monotonic()+30, threading.Event())
+            evidence = load_json(guard.root/'probes'/(digest(['create1', 'device-map'])+'.json'))
+            self.assertEqual(evidence['status'], 'VERIFIED')
+            self.assertEqual(evidence['observed'], {'5': 0, '6': 1})
+
+    def test_declared_device_map_mismatch_blocks_the_create(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runner = Mock(side_effect=[(1, b'', b''), (1, b'', b''),
+                                       (0, chip_map((5, 0), (6, 2)), b'')])
+            node, _ = self.node(folder, runner)
+            group = dict(npu_ids=[5, 6], ports=[], root=str(Path(folder)/'task'),
+                         container_root='/workspace/tasks/t',
+                         device_id_map={'5': 0, '6': 1})
+            with self.assertRaisesRegex(ProtocolError, 'RECOVERY_REQUIRED'):
+                node.create('create1', group, time.monotonic()+30, threading.Event())
+
+    def test_undeclared_remapping_requires_an_explicit_map(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runner = Mock(side_effect=[(1, b'', b''), (1, b'', b''),
+                                       (0, chip_map((5, 0), (6, 1)), b'')])
+            node, _ = self.node(folder, runner)
+            group = dict(npu_ids=[5, 6], ports=[], root=str(Path(folder)/'task'),
+                         container_root='/workspace/tasks/t')
+            with self.assertRaisesRegex(ProtocolError, 'declare device_id_map'):
+                node.create('create1', group, time.monotonic()+30, threading.Event())
+
+    def test_identity_numbering_without_a_map_proceeds(self):
+        with tempfile.TemporaryDirectory() as folder:
+            inspect = json.dumps(dict(Id=CID, Image=IMAGE, Running=True)).encode()
+            runner = Mock(side_effect=[(1, b'', b''), (1, b'', b''),
+                                       (0, chip_map((5, 5), (6, 6)), b''),
+                                       (0, inspect, b''), (0, b'', b'')])
+            node, _ = self.node(folder, runner)
+            group = dict(npu_ids=[5, 6], ports=[], root=str(Path(folder)/'task'),
+                         container_root='/workspace/tasks/t')
+            self.assertEqual(node.create('create1', group, time.monotonic()+30,
+                                         threading.Event())['container_id'], CID)
+
+    def test_unavailable_chip_map_without_a_declaration_keeps_legacy_behaviour(self):
+        with tempfile.TemporaryDirectory() as folder:
+            inspect = json.dumps(dict(Id=CID, Image=IMAGE, Running=True)).encode()
+            runner = Mock(side_effect=[(1, b'', b''), (1, b'', b'npu-smi'),
+                                       (0, inspect, b''), (0, b'', b'')])
+            node, guard = self.node(folder, runner)
+            group = dict(npu_ids=[5], ports=[], root=str(Path(folder)/'task'),
+                         container_root='/workspace/tasks/t')
+            node.create('create1', group, time.monotonic()+30, threading.Event())
+            evidence = load_json(guard.root/'probes'/(digest(['create1', 'device-map'])+'.json'))
+            self.assertEqual(evidence['status'], 'INCONCLUSIVE')
+
+    def test_unavailable_chip_map_with_a_declaration_requires_recovery(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runner = Mock(side_effect=[(1, b'', b''), (1, b'', b''), (1, b'', b'npu-smi')])
+            node, _ = self.node(folder, runner)
+            group = dict(npu_ids=[5, 6], ports=[], root=str(Path(folder)/'task'),
+                         container_root='/workspace/tasks/t',
+                         device_id_map={'5': 0, '6': 1})
+            with self.assertRaisesRegex(ProtocolError, 'RECOVERY_REQUIRED'):
+                node.create('create1', group, time.monotonic()+30, threading.Event())
 
     def test_start_reverifies_and_service_enters_the_borrowed_container(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -184,27 +264,27 @@ class ExistingContainerNodeTests(unittest.TestCase):
     def test_ports_are_probed_inside_the_container_namespace(self):
         with tempfile.TemporaryDirectory() as folder:
             inspect = json.dumps(dict(Id=CID, Image=IMAGE, Running=True)).encode()
-            runner = Mock(side_effect=[(1, b'', b''), (0, inspect, b''),
+            runner = Mock(side_effect=[(1, b'', b''), (0, b'', b''), (0, inspect, b''),
                                        (0, b'BUSY 18056\n', b'')])
             node, _ = self.node(folder, runner)
             group = dict(npu_ids=[0], ports=[18056], root=str(Path(folder)/'task'),
                          container_root='/workspace/tasks/t')
             with self.assertRaisesRegex(ProtocolError, 'RESOURCE_BUSY'):
                 node.create('create1', group, time.monotonic()+30, threading.Event())
-            probe = runner.call_args_list[2].args[0]
+            probe = runner.call_args_list[3].args[0]
             self.assertEqual(probe[:5], ['docker', 'exec', CID, 'python3', '-c'])
             self.assertEqual(probe[-1], '18056')
 
     def test_identity_or_image_drift_blocks_every_effect(self):
         with tempfile.TemporaryDirectory() as folder:
             drift = json.dumps(dict(Id=CID, Image='sha256:'+'c'*64, Running=True)).encode()
-            runner = Mock(side_effect=[(1, b'', b''), (0, drift, b'')])
+            runner = Mock(side_effect=[(1, b'', b''), (0, b'', b''), (0, drift, b'')])
             node, _ = self.node(folder, runner)
             group = dict(npu_ids=[0], ports=[], root=str(Path(folder)/'task'),
                          container_root='/workspace/tasks/t')
             with self.assertRaisesRegex(ProtocolError, 'identity or running state'):
                 node.create('create1', group, time.monotonic()+30, threading.Event())
-            self.assertEqual(runner.call_count, 2)
+            self.assertEqual(runner.call_count, 3)
 
     def test_release_stops_marked_groups_and_keeps_the_container(self):
         with tempfile.TemporaryDirectory() as folder:

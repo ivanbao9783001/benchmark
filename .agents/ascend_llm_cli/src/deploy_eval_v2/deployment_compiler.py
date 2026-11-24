@@ -51,6 +51,7 @@ def compile_bound_deployment(plan, bindings):
     deployment = copy.deepcopy(plan['deployment'])
     existing = deployment['runtime'].get('mode', 'owned_container') == 'existing_container'
     selected = {}
+    device_maps = {}
     contexts = {}
     def linux_path(value):
         if not value.startswith('/') or '..' in PurePosixPath(value).parts or '\\' in value or any(ord(c)<32 for c in value):
@@ -75,6 +76,8 @@ def compile_bound_deployment(plan, bindings):
                 if ':' in binding['container_work_root']:
                     raise ProtocolError('INVALID_INPUT: container work root')
                 container_root = str(PurePosixPath(binding['container_work_root'])/plan['task_id'])
+                if 'device_id_map' in binding['container']:
+                    device_maps[slot] = binding['container']['device_id_map']
             else:
                 if 'container' in binding or 'container_work_root' in binding:
                     raise ProtocolError('INVALID_INPUT: borrowed container binding in owned mode')
@@ -100,7 +103,7 @@ def compile_bound_deployment(plan, bindings):
         hosts = [bindings['nodes'][slot]['host'].split('@')[-1].lower() for slot in selected]
         if len(hosts) != len(set(hosts)):
             raise ProtocolError('INVALID_INPUT: duplicate physical host aliases; use one node identity')
-        compiled = compile_deployment(deployment, selected)
+        compiled = compile_deployment(deployment, selected, device_maps)
         for group in compiled['groups'].values():
             binding = bindings['nodes'][group['node']]
             group['host'] = binding['host']
@@ -110,6 +113,8 @@ def compile_bound_deployment(plan, bindings):
                 # logs use its own writable root; publishable host state stays
                 # under the unchanged host task root.
                 group['container_root'] = str(PurePosixPath(binding['container_work_root'])/plan['task_id'])
+                if 'device_id_map' in binding['container']:
+                    group['device_id_map'] = copy.deepcopy(binding['container']['device_id_map'])
                 group['mounts'] = []
                 if binding['container'].get('self') is True:
                     group['self'] = True

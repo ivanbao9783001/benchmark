@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import time
 from .compiler import digest
+from .device_map import device_map_mismatches, parse_chip_logic_map
 from .docker_node import DockerNode
 from .durable import atomic_json
 from .process_guard import remaining, run_logged
@@ -148,6 +149,7 @@ class ExistingContainerNode(DockerNode):
                     raise ProtocolError('RESOURCE_BUSY: NPU in use')
                 if code != 1 or output.strip() or error.strip():
                     raise ProtocolError('RECOVERY_REQUIRED: NPU occupancy probe inconclusive')
+            self._check_device_map(command_id, group, deadline, cancelled)
             self.inspect_running(self.container['id'], deadline, cancelled)
             self._probe_ports(self.container['id'], group['ports'], deadline)
             # The borrowed container needs its own script/log directories.
@@ -157,6 +159,51 @@ class ExistingContainerNode(DockerNode):
             return dict(container_id=self.container['id'], image_id=self.container['image'],
                         name=self.container['id'], resources=resources)
         return self.guard.command(command_id, dict(kind='create', group=group), action)
+
+    def _read_chip_logic_map(self, deadline):
+        """Probe the container's NPU numbering without creating or starting anything."""
+        return self.runner(['docker', 'exec', self.container['id'], 'npu-smi', 'info', '-m'],
+                           timeout=min(30, remaining(deadline)), limit=8192)
+
+    def _check_device_map(self, command_id, group, deadline, cancelled):
+        """Confirm physical-to-logical numbering before claiming the service start.
+
+        Placement, claims and occupancy probes use host physical IDs. A borrowed
+        container may expose them as different logical IDs, so the operator-declared
+        map is checked against the runtime probe; an undeclared renumbering must be
+        resolved explicitly instead of failing later in the health phase.
+        """
+        declared = group.get('device_id_map')
+        code, output, error = self._read_chip_logic_map(deadline)
+        observed = {}
+        if code == 0:
+            try:
+                observed = parse_chip_logic_map(output.decode(errors='replace'))
+            except ValueError:
+                observed = {}
+        if declared is None:
+            remapped = {device: observed[device] for device in group['npu_ids']
+                        if device in observed and observed[device] != device}
+            status = 'REMAPPED' if remapped else ('IDENTITY' if observed else 'INCONCLUSIVE')
+        elif not observed:
+            status = 'UNVERIFIABLE'
+        else:
+            status = 'MISMATCH' if device_map_mismatches(declared, observed) else 'VERIFIED'
+        atomic_json(self.guard.root/'probes'/(digest([command_id, 'device-map'])+'.json'),
+                    dict(declared=declared, observed=observed, code=code,
+                         stdout=output.decode(errors='replace'),
+                         stderr=error.decode(errors='replace'), status=status))
+        if declared is None:
+            if status == 'REMAPPED':
+                raise ProtocolError('RECOVERY_REQUIRED: container devices remapped; '
+                                    'declare device_id_map')
+            return
+        if status == 'UNVERIFIABLE':
+            raise ProtocolError('RECOVERY_REQUIRED: device_id_map unverifiable; '
+                                'npu-smi info -m failed in the container')
+        if status == 'MISMATCH':
+            raise ProtocolError('RECOVERY_REQUIRED: device_id_map does not match the '
+                                'container chip logic IDs')
 
     def start_container(self, command_id, cid, deadline, cancelled):
         """A borrowed container is already running; only re-verify it."""

@@ -28,6 +28,8 @@
 
 例如 package-runtime 的请求文件内容为 `{"destination":"<root>/runtime.zip"}`。所有 `destination` 必须指向该根内的新文件或新目录，不得写到仓库根、当前目录或任意临时路径。准备顺序为打包、审阅、冻结、check-ready，再由对应阶段技能发布与启动。destination 使用未存在的新文件或目录（类型按表）；冻结后不手工修改内容。`runtime_archive` 与 `input_directory` 必须位于 `task_root` 内，跨目录即视为输入缺口。prepare-inputs/export-contracts 见下文及 plan 技能。control.json 的任务键、冻结 plan.task_id 和 task_ref 必须一致。
 
+无参 `deploy-eval-v2 identity` 不读 request 与 config，在本地输出 `{"machine_id":"<32位小写十六进制>","source":"machine-id"|"hostname-derived"}`，用于在节点/容器内取证 machine identity（见 installation.md 第 5 节）。
+
 nonce 是启动身份随机值，不是摘要计算结果，也不是32位GUID；可用控制端 Python `secrets.token_hex(32)` 生成64位值，保存到请求后始终复用。`INVALID_INPUT: startup digest` 表示 runtime_sha256、bundle_sha256 或 nonce 中至少一项格式不符合上述契约；不能因此把已发布包推断为已启动。对未知启动结果仍按身份与持久回执查询，禁止换nonce盲重试。
 
 Production execution is guarded and implemented. Freeze validates schemas, semantic references and compiled inputs. check-ready is local only; it does not attest host readiness. publish-task installs immutable runtime/input packages; start-task verifies detached Python process and live socket identity. Real-host functional acceptance covers the three scenarios and bounded workload documented in the CLI README; it does not attest readiness of another host.
@@ -48,7 +50,7 @@ python -m deploy_eval_v2 --config control.json read-result --task-ref task-1 --a
 
 control.json 是受信控制端配置，固定位于交付根 `task_root/control.json`：tasks 下以 task_ref 为键，值包含 `host`、`root`（节点运行根 `node_root`）、`allowed_root`、`task_root`（交付根）和可选 `python`。`root` 必须位于 `allowed_root` 内且不能等于它；`task_root` 必须是绝对路径，末段等于 task_ref，且不能等于或位于该任务的 `root` 内。旧版 control.json（无 `task_root`）与旧 launch identity（`task_root` 键）不兼容，升级后按新契约重写，不混用。配置不含密码。需要发布测试端时，在任务条目下加 `tester`，键名为 `host`、`root`（测试端运行根，取 `work_root/task.id`）和可选 `python`；与 tasks 条目同形，但不写 `allowed_root` 与 `task_root`。同机测试且 tester 与任务运行根一致时可省略该段。
 
-当控制端本身运行在该任务的借用容器内（`bindings.nodes.<n>.container.self=true`）时，任务条目额外写 `self: true`。该条目的 publish-task、start-task、stop-runtime 与所有查询改在本地执行，不再调用 ssh；check-ready 只有在存在非 self 目标时才要求 ssh，并额外校验 self 节点唯一、等于控制节点、控制机 `/etc/machine-id` 等于该节点 `machine_id`。runtime 侧通过 `/.dockerenv` 自证处于容器内，缺失即失败。
+当控制端本身运行在该任务的借用容器内（`bindings.nodes.<n>.container.self=true`）时，任务条目额外写 `self: true`。该条目的 publish-task、start-task、stop-runtime 与所有查询改在本地执行，不再调用 ssh；check-ready 只有在存在非 self 目标时才要求 ssh，并额外校验 self 节点唯一、等于控制节点、本机身份等于该节点 `machine_id`。本机身份走统一身份链：优先 `/etc/machine-id`，为空或不可读时用 hostname 派生（见 installation.md 第 5 节），可用 `deploy-eval-v2 identity` 直接查看。runtime 侧通过 `/.dockerenv` 自证处于容器内，缺失即失败。
 
 副作用请求公共字段：task_ref、request_id、expected_version、wait_ms（0—30000）；protocol_version 可省略，CLI 补为 1.0。deploy 加 plan_ref；eval 加 service_id、case_id；release 加 service_id；cancel 加 scope（task/operation）、operation_id。CLI 将 task_ref 映射为协议 task_id，kind 由子命令决定。业务配置放冻结 JSON，不扩展成零散 CLI 参数。
 

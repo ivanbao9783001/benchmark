@@ -17,6 +17,13 @@ CID = 'c'*64
 IMAGE = 'sha256:'+'d'*64
 
 
+def chip_map(*rows):
+    lines = [b'\tNPU ID  Chip ID  Chip Logic ID  Chip Name']
+    lines += [('\t'+str(npu)+'  0  '+str(logic)+'  Ascend 910B4').encode()
+              for npu, logic in rows]
+    return b'\n'.join(lines)+b'\n'
+
+
 class SelfContainerNodeTests(unittest.TestCase):
     def node(self, folder, runner):
         guard = HostGuard(Path(folder)/'guard', 'task', 'a'*64)
@@ -27,7 +34,7 @@ class SelfContainerNodeTests(unittest.TestCase):
             marker = Path(folder)/'dockerenv'
             marker.write_text('')
             free = (0, b'\tNo process in device.\n', b'')
-            runner = Mock(side_effect=[free, free, (0, b'FREE\n', b'')])
+            runner = Mock(side_effect=[free, free, (0, b'', b''), (0, b'FREE\n', b'')])
             node, guard = self.node(folder, runner)
             group = dict(npu_ids=[6, 7], ports=[8022],
                          root=str(Path(folder)/'task'),
@@ -40,16 +47,49 @@ class SelfContainerNodeTests(unittest.TestCase):
             self.assertEqual(load_json(evidence)['image_verified'], False)
             calls = [item.args[0] for item in runner.call_args_list]
             self.assertEqual(calls[0], ['npu-smi', 'info', '-t', 'proc-mem', '-i', '6'])
-            self.assertEqual(calls[2], [sys.executable, '-c', calls[2][2], '8022'])
+            self.assertEqual(calls[2], ['npu-smi', 'info', '-m'])
+            self.assertEqual(calls[3], [sys.executable, '-c', calls[3][2], '8022'])
             self.assertFalse(any('docker' in argv for argv in calls))
             self.assertTrue((Path(folder)/'container'/'scripts').is_dir())
+
+    def test_create_verifies_a_declared_map_locally(self):
+        with tempfile.TemporaryDirectory() as folder:
+            marker = Path(folder)/'dockerenv'
+            marker.write_text('')
+            free = (0, b'\tNo process in device.\n', b'')
+            runner = Mock(side_effect=[free, free, (0, chip_map((6, 0), (7, 1)), b''),
+                                       (0, b'FREE\n', b'')])
+            node, guard = self.node(folder, runner)
+            group = dict(npu_ids=[6, 7], ports=[8022],
+                         root=str(Path(folder)/'task'),
+                         container_root=str(Path(folder)/'container'),
+                         device_id_map={'6': 0, '7': 1})
+            with patch('deploy_eval_v2.self_container_node.DOCKERENV', marker):
+                node.create('create-1', group, time.monotonic()+60, threading.Event())
+            evidence = load_json(guard.root/'probes'/(digest(['create-1', 'device-map'])+'.json'))
+            self.assertEqual(evidence['status'], 'VERIFIED')
+
+    def test_create_blocks_a_declared_map_mismatch_locally(self):
+        with tempfile.TemporaryDirectory() as folder:
+            marker = Path(folder)/'dockerenv'
+            marker.write_text('')
+            free = (0, b'\tNo process in device.\n', b'')
+            runner = Mock(side_effect=[free, free, (0, chip_map((6, 0), (7, 0)), b'')])
+            node, _ = self.node(folder, runner)
+            group = dict(npu_ids=[6, 7], ports=[8022],
+                         root=str(Path(folder)/'task'),
+                         container_root=str(Path(folder)/'container'),
+                         device_id_map={'6': 0, '7': 1})
+            with patch('deploy_eval_v2.self_container_node.DOCKERENV', marker):
+                with self.assertRaisesRegex(ProtocolError, 'RECOVERY_REQUIRED'):
+                    node.create('create-1', group, time.monotonic()+60, threading.Event())
 
     def test_create_without_image_omits_image_id(self):
         with tempfile.TemporaryDirectory() as folder:
             marker = Path(folder)/'dockerenv'
             marker.write_text('')
             free = (0, b'\tNo process in device.\n', b'')
-            runner = Mock(side_effect=[free, free, (0, b'FREE\n', b'')])
+            runner = Mock(side_effect=[free, free, (0, b'', b''), (0, b'FREE\n', b'')])
             guard = HostGuard(Path(folder)/'guard', 'task', 'a'*64)
             node = SelfContainerNode(guard, dict(id=CID, self=True), runner)
             group = dict(npu_ids=[6, 7], ports=[8022],
@@ -65,7 +105,7 @@ class SelfContainerNodeTests(unittest.TestCase):
             marker = Path(folder)/'dockerenv'
             marker.write_text('')
             free = (0, b'\tNo process in device.\n', b'')
-            runner = Mock(side_effect=[free, free, (0, b'FREE\n', b'')])
+            runner = Mock(side_effect=[free, free, (0, b'', b''), (0, b'FREE\n', b'')])
             node, _ = self.node(folder, runner)
             group = dict(npu_ids=[6, 7], ports=[8022],
                          root=str(Path(folder)/'task'),

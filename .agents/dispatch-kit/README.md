@@ -34,7 +34,7 @@
 | `container.image` | 现场发现 | `self` 可省略，记 `UNVERIFIED` |
 | `container_work_root` | 现场 / 派生 | 容器内 `allowed_root` 的可写投影；唯一候选才采用，否则停止；目录允许不存在 |
 | `network` | 现场发现（existing）/ 派单方（owned） | existing 为空时 `ip -o addr`，对端经 `docker exec`；多网卡按对端可达性选择并留证，无法确定则停；owned 无容器可探测，必须在 plan 前给出 |
-| `machine_id` | 现场发现 | `/etc/machine-id` → `/run/machine-id` → `/var/lib/dbus/machine-id` |
+| `machine_id` | 现场发现 | 在目标节点/容器内执行 `deploy-eval-v2 identity` 取得（优先 `/etc/machine-id`，为空时按 installation.md 第 5 节用 hostname 派生；禁止复制宿主值） |
 | `host`、`python` | 现场发现 | 对端经 SSH 验证可达 |
 | `allowed_root` | 派单方 | 授权边界，执行方不得自行设定、扩大或缩小 |
 | `guard_root` | 派单方，可省 | 派单方未给时取 CLI 默认 `/var/lib/deploy-eval-v2/guard` 写回；宿主机全局，不得落在交付根、节点运行根或 `allowed_root` 内 |

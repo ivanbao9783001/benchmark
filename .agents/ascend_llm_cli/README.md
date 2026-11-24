@@ -99,17 +99,19 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 会被跳过并写入 `probes/<digest>.json` 证据。显式列出的设备只有附属节点允许缺失；其他设备缺失
 仍按原行为拒绝，避免设备名写错时静默少挂。显式 `mounts` 仍要求源路径存在，缺失即拒绝。
 
-## 显式容器逻辑卡映射（本地补丁 local.devicemap1）
+## 显式容器逻辑卡映射
 
-`placement.devices` 始终表示宿主物理卡，资源声明、占用检查和收尾不变。
-对已做运行时探针验证的非特权设备隔离容器，可在 `runtime.container`
-增加 `"device_id_map": {"2": 0}`，同时显式映射 `/dev/davinci2` 及所需管理设备。
-此时 `ASCEND_RT_VISIBLE_DEVICES` / `device-ids` 使用逻辑编号 `0`；若未显式提供
-进程选择器，编译器按该映射生成。`ASCEND_VISIBLE_DEVICES` 仍按物理编号校验，
+`placement.devices`、`npu_ids`、资源声明、占用检查与 `npu-smi` 探测始终表示宿主物理卡。
+借用已有容器（`runtime.mode=existing_container`）若把所选物理卡以不同逻辑编号暴露，可在
+该节点 bindings 的 `container` 中声明 `"device_id_map": {"5": 0, "6": 1}`（键为宿主物理
+NPU 号，值为容器内逻辑号）。此时 `ASCEND_RT_VISIBLE_DEVICES` / `device-ids` 使用逻辑编号；
+若未显式提供进程选择器，编译器按该映射生成。`ASCEND_VISIBLE_DEVICES` 仍按物理编号校验，
 不会单独抑制逻辑选择器的生成。不得仅凭 `--device` 参数顺序推断该映射。
 
-映射必须覆盖显式映射的全部物理 NPU，并与每个模型节点的物理资源归属集合一致；
-逻辑编号必须从0连续且唯一。特权容器、源/目标设备路径重映射、遗漏/额外物理卡
-或冲突选择器会被拒绝。不带此字段的既有计划行为不变。完整映射写入审阅摘要、
-冻结输入及编译后的容器配置，随输入及 runtime 摘要校验；旧冻结包不能原地修改。
-这不代表运行时一定可用，也不代表服务部署或性能验收通过。
+映射必须按节点恰好覆盖该节点本次 placement 的物理卡；逻辑编号必须从 0 连续且唯一；
+`src:dst` 设备路径写法与 owned 模式出现该字段都会被拒绝。不带此字段的既有计划行为不变。
+映射随 bindings 冻结并写入编译后的节点配置。`check-ready` 静态校验映射，`self`/本地节点
+还会执行 `npu-smi info -m` 比对 `Chip Logic ID`。`create` 在占用探测后、启动前再核对一次：
+声明不符或未声明却检测到重编号即 `RECOVERY_REQUIRED`，证据写入
+`guard/probes/<digest([command_id,'device-map'])>`；`-m` 不可用且未声明映射时按旧行为
+放行并记 inconclusive。这不代表运行时一定可用，也不代表服务部署或性能验收通过。

@@ -46,3 +46,24 @@ deploy-eval-v2 install-skills --request skills-install.json
 - 不要把 Windows 依赖 wheel 上传到 Linux；按目标系统与架构准备依赖。
 - AISBench、数据集、tokenizer 与模型权重由 plan 绑定的现场提供，本流程不安装。
 - 容器创建/复用按 top_input 的 owned/existing 模式执行；本节不创建容器，也不改变归属。
+
+## 5. 节点与容器的 machine identity（existing/self 模式）
+
+check-ready 与 start-task 用同一条身份链确定“本机是谁”，不需要预置 `/etc/machine-id`：
+
+1. `/etc/machine-id` 可读且为 32 位小写十六进制 → `source=machine-id`；
+2. 文件缺失、为空或非法 → 取 `sha256("deploy-eval-v2:v1:" + hostname)` 的前 32 位十六进制 → `source=hostname-derived`。
+
+在目标节点（借用容器内则在该容器内）直接执行：
+
+```bash
+deploy-eval-v2 identity
+# {"machine_id":"...","source":"machine-id"} 或 {"machine_id":"...","source":"hostname-derived"}
+```
+
+- 把 `machine_id` 写入 bindings 的 `nodes.<n>.machine_id` 与同容器 tester 的 `machine_id`；两处必须相同。
+- 每次都在实际执行位置取证：容器内取容器自己的身份，禁止复制宿主或其他容器的值。
+- 容器重建后 hostname 可能变化，重新执行 `identity` 并更新 bindings。
+- 派生值只区分主机（hostname）；同一 hostname 下的多个容器会得到相同派生值，区分容器以 `container.id` 为准。
+- `/etc/machine-id` 与 hostname 都不可用时命令返回 `INVALID_INPUT: machine identity unavailable`，按现场问题停止回报。
+

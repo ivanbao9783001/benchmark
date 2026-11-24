@@ -13,16 +13,13 @@ from .self_container_node import SelfContainerNode
 from .ssh_node import SSHNode
 from .remote_guard import HostGuard,resolve_guard_root
 from .protocol import ProtocolError
+from .identity import resolve_identity
 
 
 def local_machine_id():
     if os.name!='posix':
         raise ProtocolError('INVALID_INPUT: runtime requires Linux')
-    with Path('/etc/machine-id').open('r',encoding='ascii') as stream:
-        value=stream.read(128).strip()
-    if not re.fullmatch('[a-f0-9]{32}',value):
-        raise ProtocolError('INVALID_INPUT: machine identity unavailable')
-    return value
+    return resolve_identity()['machine_id']
 
 
 def build_executor(root,identity,*,machine_id_reader=local_machine_id,guard_root=None):

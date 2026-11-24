@@ -28,6 +28,21 @@ class OwnedExecutorTests(unittest.TestCase):
             self.assertEqual(api.status()['task_state'],'RECOVERY_REQUIRED')
             node.runner.assert_not_called()
 
+    def test_deploy_refusal_keeps_its_actionable_error_code(self):
+        def refused(compiled,nodes,execution,target,cancelled):
+            return dict(execution_status='FAILED',phase='create',containers={},cleanup={},
+                        cleanup_status='UNVERIFIED',error_ref='task.jsonl',
+                        error_code='RECOVERY_REQUIRED')
+        with tempfile.TemporaryDirectory() as folder:
+            api,executor,reference,node=self.setup_runtime(folder,deployer=refused)
+            response=api.submit(dict(protocol_version='1.0',task_id='t',kind='deploy',request_id='d',
+                                     expected_version=0,plan_ref=reference['sha256'],wait_ms=1000))
+            event=response['events'][-1]
+            self.assertEqual(event['type'],'operation.failed')
+            self.assertEqual(event['status'],'RECOVERY_REQUIRED')
+            self.assertEqual(event['data']['phase'],'create')
+            self.assertEqual(event['data']['error_code'],'RECOVERY_REQUIRED')
+
     def test_modified_service_cannot_authorize_release(self):
         from copy import deepcopy
         mutations = {
@@ -67,6 +82,8 @@ class OwnedExecutorTests(unittest.TestCase):
             node.guard.claim(resources)
             kind,status,data=executor.cancel_idle('op')
             self.assertEqual((kind,status),('operation.cancelled','CANCELLED'))
+            # Success payload is frozen: no terminal-only fields such as error_code.
+            self.assertEqual(set(data),{'cleanup_status','claims_released','resources'})
             self.assertTrue(data['claims_released'])
             self.assertEqual(list((node.guard.root/'claims').glob('*.json')),[])
 
@@ -81,9 +98,43 @@ class OwnedExecutorTests(unittest.TestCase):
             kind,status,data=executor.cancel_idle('op')
             self.assertEqual((kind,status),('operation.failed','RECOVERY_REQUIRED'))
             self.assertFalse(data['claims_released'])
+            # The failure payload must satisfy the operation.failed event schema.
+            self.assertEqual(data['cleanup_status'],'UNVERIFIED')
+            self.assertEqual(data['error_code'],'CLEANUP_UNVERIFIED')
+            for name,result in data['resources'].items():
+                with self.subTest(node=name):
+                    self.assertEqual(result['cleanup_status'],'UNVERIFIED')
+                    self.assertFalse(result['claims_released'])
+                    self.assertEqual(result['error_code'],'RECOVERY_REQUIRED')
             self.assertEqual(len(list((node.guard.root/'claims').glob('*.json'))),len(resources))
 
-    def setup_runtime(self,folder,evaluator=None,idle_release=False):
+    def test_failed_deployment_task_cancel_publishes_schema_valid_terminal_event(self):
+        def broke(*args):
+            raise RuntimeError('deployment adapter broke')
+        with tempfile.TemporaryDirectory() as folder:
+            api,executor,reference,node=self.setup_runtime(folder,deployer=broke)
+            groups=executor.inputs()['compiled.json']['topology']['groups']
+            resources=sorted({r for group in groups.values() for r in
+                ['npu:'+str(n) for n in group['npu_ids']]+['tcp:'+str(p) for p in group['ports']]})
+            node.guard.claim(resources)
+            node.guard.command('create-1',{'kind':'create'},lambda:dict(container_id='unused'))
+            api.submit(dict(protocol_version='1.0',task_id='t',kind='deploy',request_id='d',
+                            expected_version=0,plan_ref=reference['sha256'],wait_ms=1000))
+            self.assertEqual(api.status()['task_state'],'RECOVERY_REQUIRED')
+            response=api.submit(dict(protocol_version='1.0',task_id='t',kind='cancel',request_id='cancel',
+                                     expected_version=api.runtime.version,scope='task',wait_ms=1000))
+            event=response['events'][-1]
+            self.assertEqual(event['type'],'operation.failed')
+            self.assertEqual(event['status'],'RECOVERY_REQUIRED')
+            self.assertEqual(event['data']['error_code'],'CLEANUP_UNVERIFIED')
+            self.assertEqual(event['data']['cleanup_status'],'UNVERIFIED')
+            self.assertFalse(event['data']['claims_released'])
+            status=api.status()
+            self.assertEqual(status['task_state'],'RECOVERY_REQUIRED')
+            self.assertIsNone(status['operation_id'])
+            self.assertEqual(len(list((node.guard.root/'claims').glob('*.json'))),len(resources))
+
+    def setup_runtime(self,folder,evaluator=None,idle_release=False,deployer=None):
         plan,bound=deploy_plan(),bindings()
         if idle_release:
             plan['policy'].update(idle_timeout_seconds=1,on_idle='release_owned')
@@ -106,7 +157,8 @@ class OwnedExecutorTests(unittest.TestCase):
             atomic_json(target,result)
             return result
         options={} if evaluator is None else dict(evaluator=evaluator,verified_tester_host='example.invalid')
-        executor=OwnedExecutor(Path(folder)/'task',frozen,reference['sha256'],digest,{'node_a':node},deployer=deploy,**options)
+        executor=OwnedExecutor(Path(folder)/'task',frozen,reference['sha256'],digest,{'node_a':node},
+                               deployer=deployer or deploy,**options)
         runtime=Runtime(Path(folder)/'task','t',executor)
         return API(runtime),executor,reference,node
 

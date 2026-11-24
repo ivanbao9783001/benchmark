@@ -145,10 +145,19 @@ def validate(data):
         is_self = isinstance(container, dict) and container.get("self") is True
         required = {"id"} if is_self else {"id", "image"}
         if (not isinstance(container, dict)
-                or not required <= set(container) <= {"id", "image", "self"}):
+                or not required <= set(container) <= {"id", "image", "self", "device_id_map"}):
             _issue(issues, "CONTAINER_SHAPE", base + ".container",
-                   "self 节点必须且只能有 id、可选 image、self；其它节点必须且只能有 id、image、可选 self")
+                   "self 节点必须且只能有 id、可选 image、self；其它节点必须且只能有 id、image、可选 self；借用容器可另带 device_id_map")
             continue
+        mapping = container.get("device_id_map")
+        if mapping is not None:
+            if (not isinstance(mapping, dict) or not mapping
+                    or any(not isinstance(key, str) or not re.fullmatch(r"0|[1-9][0-9]*", key)
+                           or type(value) is not int or value < 0
+                           for key, value in mapping.items())
+                    or sorted(mapping.values()) != list(range(len(mapping)))):
+                _issue(issues, "DEVICE_ID_MAP", base + ".container.device_id_map",
+                       "必须是 {宿主物理NPU号: 容器逻辑号}，逻辑号从 0 连续且唯一")
         if not isinstance(container.get("id"), str) or not CONTAINER_ID.fullmatch(container["id"]):
             _issue(issues, "CONTAINER_ID", base + ".container.id", "必须是 64 位小写十六进制")
         if "image" in container and (not isinstance(container.get("image"), str)

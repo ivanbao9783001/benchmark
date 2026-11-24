@@ -25,7 +25,8 @@ deploy-eval-v2 --version
 
 Use the public socket-start workflow in [socket-validation.md](../../ascend-llm-router/references/socket-validation.md). The Agent itself must call deploy, then eval upon deployment.ready, then release upon evaluation.completed. No source or unit test reading is needed. The legacy developer unit test is not a substitute for Agent acceptance.
 
-在每个目标节点核验 Python 版本、jsonschema 导入、/etc/machine-id、
+在每个目标节点核验 Python 版本、jsonschema 导入、`deploy-eval-v2 identity` 可输出 32 位小写十六进制
+身份（身份链见 installation.md 第 5 节，无需预置 `/etc/machine-id`）、
 节点运行根目录权限；在 runtime 主节点核验 detached Python process creation 可用及授权。
 模型节点另核验 Docker、NPU、驱动、镜像、挂载与模型路径；远端子节点
 须能从 runtime 主节点通过非交互 SSH 访问。控制端 SSH 可达不能替代此检查。
@@ -33,7 +34,7 @@ Use the public socket-start workflow in [socket-validation.md](../../ascend-llm-
 
 ## 2. 形成冻结输入
 
-准备 plan.json、bindings.json，完成现场绑定（含 machine_id）。用
+准备 plan.json、bindings.json，完成现场绑定（含由 `identity` 取证并写回的 machine_id）。用
 draft-review 生成摘要，审阅通过后形成 review.json，再执行 freeze-inputs。
 不要直接把测试 fixture 当作已批准生产输入；其中的主机、路径和参数是示例。
 
@@ -78,6 +79,7 @@ wait-event 的 after-seq 只使用实际交付的 next_cursor。
 | 场景 | 要求 |
 | --- | --- |
 | 发布/启动 | 摘要匹配；detached Python process 与 socket 身份匹配；同 nonce 不重复启动 |
+| existing 设备编号 | `placement.devices`/`npu_ids` 始终是宿主物理号；借用容器重编号时 bindings 必须声明 `container.device_id_map`。create 在占用探测后、启动前用容器内 `npu-smi info -m` 逐卡核对，证据写 `probes/<digest([command_id,'device-map'])>.json`；声明不符或未声明却检测到重编号即 `RECOVERY_REQUIRED`，`-m` 不可用且未声明时按旧行为放行并记 inconclusive |
 | 短阶段/长阶段 | 返回边界，或 RUNNING 后按游标得到边界 |
 | 观察中断 | 结束 client/SSH 后 runtime 仍在；重连无重复模型容器 |
 | 幂等 | 同 request_id 同内容返回原操作；不同内容拒绝 |

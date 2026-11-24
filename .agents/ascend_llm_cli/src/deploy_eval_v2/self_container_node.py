@@ -58,6 +58,7 @@ class SelfContainerNode(ExistingContainerNode):
                     raise ProtocolError('RESOURCE_BUSY: NPU in use')
                 if probe['busy'] is None:
                     raise ProtocolError('RECOVERY_REQUIRED: NPU occupancy probe inconclusive')
+            self._check_device_map(command_id, group, deadline, cancelled)
             self.inspect_running(self.container['id'], deadline, cancelled)
             self._probe_ports(self.container['id'], group['ports'], deadline)
             for directory in ('scripts', 'logs'):
@@ -88,6 +89,11 @@ class SelfContainerNode(ExistingContainerNode):
         if source.resolve() != target.resolve():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
+
+    def _read_chip_logic_map(self, deadline):
+        """Inside the borrowed container the runtime is local; no docker exec."""
+        return self.runner(['npu-smi', 'info', '-m'],
+                           timeout=min(30, remaining(deadline)), limit=8192)
 
     def _npu_probe(self, device, deadline):
         """Ask the driver, not the process table: other containers are invisible here.

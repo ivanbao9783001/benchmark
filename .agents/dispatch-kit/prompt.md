@@ -8,7 +8,7 @@
 技能入口：<REPO_ROOT>/.agents/skills/ascend-llm-router/SKILL.md；先读它，再用 references/top-input.md §0 核对环境、§1 核对任务形态，不要从示例反推。
 
 本次环境结论：<existing | owned>。
-<existing：控制节点 n=<NODE_ID>，该节点 container.self=true（当前所在容器）。镜像摘要、network、container_work_root、machine_id 由你现场取证（self 节点本地读取，其余节点经 SSH + docker 进入后 inspect/exec 读取）；self 节点容器 id 自证，对端容器 id 以派单值为准并核对。单机只有这一节点，本地执行；双机 PD 另一节点不写 self，对端 IP=<PEER_IP>、容器 id=<PEER_CONTAINER_ID>、SSH 访问为 <HOST/USER/KEY>。>
+<existing：控制节点 n=<NODE_ID>，该节点 container.self=true（当前所在容器）。镜像摘要、network、container_work_root、machine_id 由你现场取证（machine_id 用 `deploy-eval-v2 identity` 在实际执行位置读取，优先 `/etc/machine-id`，为空时 hostname 派生；其余字段 self 节点本地读取，其他节点经 SSH + docker 进入后 inspect/exec 读取）；self 节点容器 id 自证，对端容器 id 以派单值为准并核对。单机只有这一节点，本地执行；双机 PD 另一节点不写 self，对端 IP=<PEER_IP>、容器 id=<PEER_CONTAINER_ID>、SSH 访问为 <HOST/USER/KEY>。>
 <owned：派单方已授权 CLI 创建并在释放时删除容器，deployment.image=<sha256:...>，不写 nodes.<id>.container，也没有 self。>
 
 本次任务形态：action=<deploy_only | deploy_and_eval | eval_only>，topology=<colocated | pd>，eval_mode=<perf | acc>；on_idle 未给时按 keep_service 写回 top_input 并在报告中声明。

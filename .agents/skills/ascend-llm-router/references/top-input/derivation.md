@@ -19,7 +19,7 @@
 | `policy.on_idle` | `task.on_idle` |
 | `control.json` 的 tasks 条目 | `nodes[control_node]` 的 `host` / `root`（= `node_root`） / `allowed_root` / `python`，另加 `task_root`（= `deliverables.local_dir/task.id`），并在其 `nodes` 下补齐其余节点的同名四项；existing 的控制节点必带 `container.self`，该条目加 `self: true` |
 | `control.json` 的 `tester` 目标 | `evaluation.tester` 的 host、`work_root/task.id`（测试端运行根，不是交付根）、`python`；键名固定为 `host` / `root` / `python` |
-| `bindings.nodes.<n>.machine_id` 与 `bindings.testers.<id>.machine_id` | 取 **CLI 实际执行位置**的 `/etc/machine-id`：existing 节点与容器内 tester 取容器内值（`self` 节点本地读取，其余节点经 docker exec）；owned 取宿主值；两者都是 check-ready 硬门槛，节点缺失返回 `NODE_MACHINE_ID_REQUIRED`。`self` 节点的节点与 tester 的 `machine_id` 必须同时等于容器内的值；`/etc/machine-id`、`/run/machine-id`、`/var/lib/dbus/machine-id` 都读不到合法 32 位值时才停止回报，不用宿主值代替 |
+| `bindings.nodes.<n>.machine_id` 与 `bindings.testers.<id>.machine_id` | 在 **CLI 实际执行位置**运行 `deploy-eval-v2 identity`：优先 `/etc/machine-id`（existing 节点与容器内 tester 取容器内值，`self` 节点本地读取，其余节点经 docker exec；owned 取宿主值），为空或不可读时用 hostname 派生 32 位值；两者都是 check-ready 硬门槛，节点缺失返回 `NODE_MACHINE_ID_REQUIRED`。`self` 节点的节点与 tester 的 `machine_id` 必须同时等于该容器内的身份；容器重建后重新取证，不用宿主值代替 |
 | `bindings.nodes.<n>.work_dir` | `nodes.<n>.allowed_root` |
 | `deployment.runtime.mode` | 由 top_input 投影：任一节点有 `container` ⇒ `existing_container`，否则 `owned_container`；模式本身由派单事实与授权决定，见 top-input.md §0 |
 | `deployment.runtime` | owned：`{image, container}`；existing：只写 `{mode:"existing_container"}` |

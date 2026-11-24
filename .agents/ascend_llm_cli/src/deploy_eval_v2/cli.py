@@ -29,6 +29,7 @@ def main(argv=None):
         commands = parser.add_subparsers(dest='kind', required=True)
         for name in ('deploy', 'eval', 'release', 'cancel', 'freeze-inputs', 'verify-inputs','draft-review','package-runtime','publish-task','start-task','check-ready','install-skills','socket-start','stop-runtime','prepare-inputs','export-contracts','validate-top-input'):
             commands.add_parser(name).add_argument('--request', required=True)
+        commands.add_parser('identity')
         for name in ('get-status', 'wait-event', 'read-result'):
             child = commands.add_parser(name)
             child.add_argument('--task-ref', required=True)
@@ -49,6 +50,10 @@ def main(argv=None):
                 child.add_argument('--scan-offset',type=int,default=0)
                 child.add_argument('--scan-line',type=int,default=1)
         args = parser.parse_args(argv)
+        if args.kind == 'identity':
+            from .identity import resolve_identity
+            sys.stdout.buffer.write(encode(resolve_identity())+b'\n')
+            return 0
         if args.kind in ('freeze-inputs', 'verify-inputs','draft-review','package-runtime','publish-task','start-task','check-ready','install-skills','socket-start','stop-runtime','prepare-inputs','export-contracts','validate-top-input'):
             request=load(args.request)
             if args.kind=='validate-top-input':

@@ -114,3 +114,99 @@ class ListenAddressTests(unittest.TestCase):
         self.assertEqual(len(commands['proxy']['startup_health_urls']), 2)
         for health in commands['proxy']['startup_health_urls']:
             self.assertTrue(health.startswith('http://192.0.2.1:'))
+
+
+def borrowed_colocated(devices, mapping=None):
+    """Single borrowed node whose mixed instance is placed on physical devices."""
+    plan = colocated_plan()
+    server = plan['deployment']['instances'][0]
+    server['placement']['devices'] = list(devices)
+    server['launch']['args']['tensor-parallel-size'] = len(devices)
+    plan['deployment']['runtime'].clear()
+    plan['deployment']['runtime']['mode'] = 'existing_container'
+    bound = colocated_bindings()
+    node = bound['nodes']['node_a']
+    node['container'] = dict(id='c'*64, image='sha256:'+'d'*64)
+    node['container_work_root'] = '/workspace/tasks'
+    if mapping is not None:
+        node['container']['device_id_map'] = mapping
+    return plan, bound
+
+
+class ContainerDeviceIdMapTests(unittest.TestCase):
+    """A borrowed container may expose selected physical NPUs under other logical IDs."""
+
+    def test_declared_map_selects_logical_ids_and_keeps_physical_claims(self):
+        plan, bound = borrowed_colocated([5, 6], {'5': 0, '6': 1})
+        group = compile_bound_deployment(plan, bound)['groups']['node_a/model']
+        self.assertEqual(group['npu_ids'], [5, 6])
+        self.assertEqual(group['device_id_map'], {'5': 0, '6': 1})
+        command = group['commands'][0]
+        self.assertEqual(command['env']['ASCEND_RT_VISIBLE_DEVICES'], '0,1')
+        self.assertNotIn('device-ids', command['argv'])
+
+    def test_absent_map_keeps_physical_selection(self):
+        plan, bound = borrowed_colocated([5, 6])
+        group = compile_bound_deployment(plan, bound)['groups']['node_a/model']
+        self.assertNotIn('device_id_map', group)
+        self.assertEqual(group['commands'][0]['env']['ASCEND_RT_VISIBLE_DEVICES'], '5,6')
+
+    def test_map_must_cover_physical_placement_exactly(self):
+        for mapping in ({'5': 0}, {'5': 0, '6': 1, '7': 2},
+                        {'5': 0, '6': 0}, {'5': 0, '6': 2}):
+            with self.subTest(mapping=mapping):
+                plan, bound = borrowed_colocated([5, 6], mapping)
+                with self.assertRaises(ProtocolError):
+                    compile_bound_deployment(plan, bound)
+
+    def test_remapped_plan_device_syntax_is_rejected(self):
+        plan, bound = borrowed_colocated([5, 6], {'5:0': 0, '6': 1})
+        with self.assertRaises(ProtocolError):
+            compile_bound_deployment(plan, bound)
+
+    def test_owned_mode_cannot_declare_a_map(self):
+        plan, bound = borrowed_colocated([5, 6], {'5': 0, '6': 1})
+        plan['deployment']['runtime'].clear()
+        plan['deployment']['runtime'].update(
+            image='image', container=dict(shm_size='1g', privileged=False))
+        with self.assertRaisesRegex(ProtocolError, 'borrowed container binding|schema'):
+            compile_bound_deployment(plan, bound)
+
+    def test_plan_runtime_cannot_carry_the_map(self):
+        plan, bound = borrowed_colocated([5, 6])
+        plan['deployment']['runtime']['container'] = dict(
+            shm_size='1g', privileged=False, device_id_map={'5': 0, '6': 1})
+        with self.assertRaises(ProtocolError):
+            compile_bound_deployment(plan, bound)
+
+    def test_explicit_selection_must_match_logical_ids(self):
+        plan, bound = borrowed_colocated([5, 6], {'5': 0, '6': 1})
+        plan['deployment']['instances'][0]['launch']['env']['ASCEND_RT_VISIBLE_DEVICES'] = '5,6'
+        with self.assertRaisesRegex(ProtocolError, 'device selection'):
+            compile_bound_deployment(plan, bound)
+
+    def test_each_node_uses_its_own_map(self):
+        plan, bound = deploy_plan(), bindings()
+        bound['nodes']['node_b'] = copy.deepcopy(bound['nodes']['node_a'])
+        node_a, node_b = bound['nodes']['node_a'], bound['nodes']['node_b']
+        node_a['container'] = dict(id='c'*64, image='sha256:'+'d'*64,
+                                   device_id_map={'0': 0, '1': 1, '2': 2, '3': 3})
+        node_a['container_work_root'] = '/workspace/tasks'
+        node_b['container'] = dict(id='e'*64, image='sha256:'+'f'*64,
+                                   device_id_map={'4': 0, '5': 1, '6': 2, '7': 3})
+        node_b['container_work_root'] = '/workspace/tasks-b'
+        node_b['host'] = 'user@benchmark-host-b.example'
+        node_b['work_dir'] = '/path/to/task-workspace-b'
+        node_b['deployments']['pd-a']['network'] = {'ip': '192.0.2.2', 'interface': 'eth0'}
+        node_b['deployments']['pd-a']['ports'] = {
+            'decode': node_a['deployments']['pd-a']['ports'].pop('decode')}
+        plan['deployment']['instances'][1]['placement']['node'] = 'node_b'
+        plan['deployment']['runtime'].clear()
+        plan['deployment']['runtime']['mode'] = 'existing_container'
+        result = compile_bound_deployment(plan, bound)
+        self.assertEqual(result['groups']['node_a/model']['npu_ids'], [0, 1, 2, 3])
+        self.assertEqual(result['groups']['node_b/model']['npu_ids'], [4, 5, 6, 7])
+        self.assertEqual(result['groups']['node_a/model']['commands'][0]['env']
+                         ['ASCEND_RT_VISIBLE_DEVICES'], '0,1,2,3')
+        self.assertEqual(result['groups']['node_b/model']['commands'][0]['env']
+                         ['ASCEND_RT_VISIBLE_DEVICES'], '0,1,2,3')

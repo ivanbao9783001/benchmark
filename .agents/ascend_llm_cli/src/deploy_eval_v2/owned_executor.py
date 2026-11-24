@@ -158,9 +158,14 @@ class OwnedExecutor:
                     model=service['model'],evidence_ref=reference,result_sha256=digest(result),
                     service_ref='service.json')
             stopped=result['execution_status']=='CANCELLED'
+            # A pre-start refusal is actionable; keep it instead of flattening every
+            # deployment failure into DEPLOYMENT_FAILED.
+            error_code=('CANCELLED' if stopped else
+                        'RECOVERY_REQUIRED' if result.get('error_code')=='RECOVERY_REQUIRED'
+                        else 'DEPLOYMENT_FAILED')
             return ('operation.cancelled' if stopped else 'operation.failed',
                     'CANCELLED' if stopped else 'FAILED',dict(evidence_ref=reference,
-                    error_code='CANCELLED' if stopped else 'DEPLOYMENT_FAILED',phase=result.get('phase'),
+                    error_code=error_code,phase=result.get('phase'),
                     cleanup_status=result['cleanup_status']))
         result=self._release(values,self.service(),operation,folder)
         atomic_json(target,result)
@@ -217,8 +222,12 @@ class OwnedExecutor:
                 results[name]=dict(cleanup_status='UNVERIFIED',claims_released=False,
                     error_code=str(error).split(':',1)[0] if isinstance(error,ProtocolError) else 'IO_ERROR')
         verified=all(result['cleanup_status']=='VERIFIED' for result in results.values())
+        data=dict(cleanup_status='VERIFIED' if verified else 'UNVERIFIED',
+                  claims_released=all(result.get('claims_released',False) for result in results.values()),
+                  resources=results)
+        if not verified:
+            # operation.failed requires the top-level error code; the success
+            # payload stays byte-for-byte compatible with earlier runtimes.
+            data['error_code']='CLEANUP_UNVERIFIED'
         return ('operation.cancelled' if verified else 'operation.failed',
-                'CANCELLED' if verified else 'RECOVERY_REQUIRED',
-                dict(cleanup_status='VERIFIED' if verified else 'UNVERIFIED',
-                     claims_released=all(result.get('claims_released',False) for result in results.values()),
-                     resources=results))
+                'CANCELLED' if verified else 'RECOVERY_REQUIRED',data)

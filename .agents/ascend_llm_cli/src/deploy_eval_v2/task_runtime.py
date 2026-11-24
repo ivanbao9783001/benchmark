@@ -2,11 +2,11 @@
 import threading
 import uuid
 import traceback
-from .task_log import DiagnosticStream, runtime_root, record_exception
+from .task_log import DiagnosticStream, runtime_root, record_exception, diagnostic
 from datetime import datetime,timezone
 from .contracts import validate_command, fingerprint
 from .event_journal import Journal
-from .protocol import ProtocolError
+from .protocol import ProtocolError, NON_BOUNDARY
 from .durable import atomic_json
 
 
@@ -140,6 +140,7 @@ class Runtime:
         if kind in ('operation.failed','operation.cancelled'):
             if kind=='operation.failed':
                 data.setdefault('phase',self.operations.get(operation,{}).get('kind','unknown'))
+                data.setdefault('error_code','RECOVERY_REQUIRED')
             if 'evidence_ref' not in data:
                 reference='results/terminal/'+str(operation)+'.json'
                 atomic_json(self.journal.root/reference,dict(schema_version='1.0',task_id=self.journal.task_id,
@@ -155,6 +156,31 @@ class Runtime:
             except Exception:
                 self.state = 'RECOVERY_REQUIRED'
                 raise
+
+    def _terminal_published(self, operation):
+        return any(event['operation_id']==operation and event['type'] not in NON_BOUNDARY
+                   for event in self.journal.events)
+
+    def _emit_terminal_safely(self, kind, operation, status, data):
+        """Publish one terminal boundary without letting a schema failure kill its thread."""
+        try:
+            self._emit(kind, operation, status, data)
+            return
+        except Exception as error:
+            diagnostic(self.journal.root/'task.jsonl','terminal event publish failed',
+                       event_type=str(kind),error=str(error))
+            if self._terminal_published(operation):
+                return
+        # Canonical fallback: the operation must become terminal and replayable
+        # even when the executor's payload or the journal write is rejected.
+        try:
+            self._emit('operation.failed', operation, 'RECOVERY_REQUIRED', dict(
+                phase=self.operations.get(operation,{}).get('kind','unknown'),
+                error_code='RECOVERY_REQUIRED', evidence_ref='task.jsonl',
+                cleanup_status='UNVERIFIED'))
+        except Exception:
+            record_exception(self.journal.root/'task.jsonl')
+            self.state = 'RECOVERY_REQUIRED'
 
     def submit(self, command):
         validate_command(command)
@@ -222,7 +248,7 @@ class Runtime:
         except Exception:
             kind,status,data='operation.cancelled','RECOVERY_REQUIRED',dict(cleanup_status='UNVERIFIED')
         with self.lock:
-            self._emit(kind,operation,status,data)
+            self._emit_terminal_safely(kind,operation,status,data)
 
     def _execute(self, command, operation,expired=False):
         try:
@@ -263,5 +289,5 @@ class Runtime:
         if expired and kind=='release.completed':
             kind='task.expired'
             data.update(reason='idle_timeout',cleanup_status='VERIFIED')
-        self._emit(kind, operation, status, data)
+        self._emit_terminal_safely(kind, operation, status, data)
         self._schedule_idle()

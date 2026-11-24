@@ -36,7 +36,7 @@ existing 默认就在容器里，`container.self` 只用来标出“当前在哪
 
 | 类别 | 字段 | 取证或派生方式 |
 | --- | --- | --- |
-| 现场事实 | `container.image`、`network`（existing 为空时）、`machine_id`、`python`、`aisbench`、`model_path`、`tester.datasets.<id>.path`、端口占用 | `self` 节点本地读取；其余节点经 SSH + `docker inspect` / `docker exec`；owned 的 `network` 必须在 plan 前由派单方给出 |
+| 现场事实 | `container.image`、`network`（existing 为空时）、`machine_id`、`python`、`aisbench`、`model_path`、`tester.datasets.<id>.path`、端口占用 | `machine_id` 用 `deploy-eval-v2 identity` 在实际执行位置取证（优先 `/etc/machine-id`，为空时 hostname 派生）；其余 `self` 节点本地读取，非 self 节点经 SSH + `docker inspect` / `docker exec`；owned 的 `network` 必须在 plan 前由派单方给出 |
 | 派生 | `task.id`、`root`（`node_root=allowed_root/task.id`）、`task_root`（`deliverables.local_dir/task.id`）、bindings、端口分配、`container_work_root`、`deliverables.local_dir`、`guard_root`、`on_idle`、`authorization`、`dataset.split/scope`、case 参数 | [derivation.md](top-input/derivation.md) 与 plan 模板默认值 |
 
 `container.id` 不属于现场事实：`self` 节点自证；非 `self` 节点必须由派单方给出完整 64 位 id，执行方按它 `docker inspect` 并核对，不按名称猜。
