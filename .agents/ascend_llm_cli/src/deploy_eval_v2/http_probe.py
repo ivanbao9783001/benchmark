@@ -96,6 +96,35 @@ def wait_health(urls, deadline, cancelled):
     return evidence
 
 
+def wait_health_any(candidates, deadline, cancelled):
+    """Return evidence for the first candidate path that answers 200.
+
+    Candidates are alternative paths on the same endpoint (for example
+    /health for plain vLLM and /healthcheck for a proxy). Every candidate is
+    retried until the shared deadline, so a not-yet-ready service still gets
+    the full timeout; redirects are rejected as in wait_health.
+    """
+    candidates = list(dict.fromkeys(candidates))
+    attempted = []
+    while True:
+        remaining(deadline)
+        for url in candidates:
+            try:
+                status, _ = request(url,min(deadline,time.monotonic()+5),cancelled,max_bytes=8192)
+                if status==200:
+                    evidence = dict(url=url,status=200,time=now())
+                    if attempted:
+                        evidence['attempted'] = attempted
+                    return [evidence]
+                attempted.append(dict(url=url,status=status,time=now()))
+                if 300 <= status < 400:
+                    raise ProtocolError('INVALID_INPUT: health redirects are not followed')
+            except (OSError,TimeoutError,http.client.HTTPException) as exc:
+                attempted.append(dict(url=url,error=type(exc).__name__,time=now()))
+        if cancelled.wait(min(.2,remaining(deadline))):
+            raise Cancelled('Health check cancelled')
+
+
 def smoke_completion(endpoint, model, deadline, cancelled):
     payload = dict(model=model,prompt='Hi',max_tokens=16,temperature=0,stream=False)
     status, raw = request(endpoint.rstrip('/')+'/v1/completions',deadline,cancelled,payload=payload)

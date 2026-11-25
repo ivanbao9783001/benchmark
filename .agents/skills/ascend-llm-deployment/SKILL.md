@@ -11,9 +11,11 @@ description: Deploy and Eval v2 的部署阶段交接与事件处理，检查冻
 
 目标执行顺序：核验输入 → 主机级资源声明 → 分发与共享存储核验 → 占用检查 → 容器就绪（owned：创建全部容器；existing：只 `docker inspect`，不创建、不启动、不停止、不删除）→ 全部依赖检查 → 模型/代理启动 → 健康 → 冒烟 → 保存部署证据。代理门控、完整 KV 参数、挂载与容器基线不能因拆分而丢失。
 
-工具返回 RUNNING 就保存操作和游标继续等待。收到 deployment.ready 后核对 service_id、endpoint、model、ownership、部署摘要、健康/冒烟时间及保留策略。仅事件名不足以证明真实可用；模拟结果必须标为模拟。
+工具返回 RUNNING 就保存操作和游标继续等待。收到 deployment.ready 后核对 service_id、endpoint、model、ownership、部署摘要、健康/冒烟时间及保留策略。注意 `ownership=owned` 表示服务由本任务管理（可在 release 时处置），existing 容器同样为 owned，**不代表容器由本任务创建**；容器归属以 runtime.mode 与 container.self 为准，报告中两者都应写明。仅事件名不足以证明真实可用；模拟结果必须标为模拟。
 
 失败检查 cleanup_status 和逐资源证据；部分创建的自有资源由 runtime 收尾，Agent 不按容器名称或 PID 猜测归属。结果未知时不重新创建容器。仅部署任务按已授权策略保留并交付释放方式；端到端任务把 service handle 交回路由选择 eval。
+
+仅部署任务在判定/验收结束后的清场，不走 cancel：对 `state=READY` 的保留服务提交 `release`（只停止本任务自有服务，existing 容器本身不改动），核对 `release.completed` 与 `cleanup_status=VERIFIED` 后，用原 task_ref、nonce 执行 `stop-runtime`。`cancel` 保留给 external_eval 会话收尾；清场动作只发生在判定之后，不计入 case 判据，报告里要标明。
 
 ## 本阶段参考与交付
 

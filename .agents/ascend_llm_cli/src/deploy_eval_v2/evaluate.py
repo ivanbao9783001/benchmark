@@ -8,11 +8,12 @@ import json
 import os
 from pathlib import Path
 import time
+from urllib.parse import urlsplit
 from . import aisbench_cli, accuracy_evidence
 from .plan_model import normalize_external_plan, validate_eval_bindings
 from .process_guard import remaining, run_logged
 from .protocol import ProtocolError, now
-from .http_probe import wait_health
+from .http_probe import wait_health_any
 from .native_results import validate_native_result
 from .durable import atomic_json
 from .json_io import load_json
@@ -94,8 +95,13 @@ def execute_external_case(plan, bindings, case_id, folder, cancelled, *,
         raise ProtocolError('INVALID_INPUT: unknown case')
     deadline = time.monotonic()+case['timeout_seconds']
     # Health is rechecked now; no previous deployment health claim is reused.
-    url = plan['service']['endpoint'].rstrip('/')+plan['service'].get('health_path', '/health')
-    health_evidence = wait_health([url],deadline,cancelled)
+    # When the caller did not pin a path, accept plain vLLM (/health) and the
+    # proxy variant (/healthcheck) instead of assuming /health exists.
+    service = plan['service']
+    health_paths = [service['health_path']] if service.get('health_path') else ['/health', '/healthcheck']
+    health_evidence = wait_health_any([service['endpoint'].rstrip('/')+path for path in health_paths],
+                                      deadline,cancelled)
+    resolved_health_path = urlsplit(health_evidence[-1]['url']).path
     # Imports and dataset checks execute in the bound tester interpreter, under
     # the same stage deadline, rather than in the coordinator's Python environment.
     case, tester, argv = prepare_case(plan, bindings, case_id, folder,check_files=False)
@@ -106,7 +112,7 @@ def execute_external_case(plan, bindings, case_id, folder, cancelled, *,
     environment.update(tester.get('environment', {}))
     atomic_json(folder/'tester-environment.json', tester.get('environment', {}))
     preflight_request=folder/'preflight-request.json'
-    atomic_json(preflight_request,dict(tester=tester,case=case,config=str(folder/'aisbench-config.py'), endpoint=plan['service']['endpoint'], health_path=plan['service'].get('health_path', '/health')))
+    atomic_json(preflight_request,dict(tester=tester,case=case,config=str(folder/'aisbench-config.py'), endpoint=plan['service']['endpoint'], health_path=resolved_health_path))
     bootstrap='import sys; sys.path.insert(0, '+repr(str(Path(__file__).parent.parent))+'); from deploy_eval_v2.benchmark_preflight import main; main()'
     preflight=runner([tester['python'],'-B','-c',bootstrap,'--request',str(preflight_request),
                          '--result',str(folder/'preflight.json')],folder/'preflight.log',deadline,cancelled,env=environment)

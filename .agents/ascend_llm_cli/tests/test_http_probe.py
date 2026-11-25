@@ -3,7 +3,7 @@ import json
 import threading
 import time
 import unittest
-from deploy_eval_v2.http_probe import request,wait_health,smoke_completion
+from deploy_eval_v2.http_probe import request,wait_health,wait_health_any,smoke_completion
 from deploy_eval_v2.process_guard import Cancelled
 from deploy_eval_v2.protocol import ProtocolError
 
@@ -12,7 +12,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):
         pass
     def do_GET(self):
-        self.send_response(302 if self.path=='/redirect' else 200)
+        self.send_response(404 if self.path=='/missing' else 302 if self.path=='/redirect' else 200)
         self.end_headers()
         try:
             if self.path=='/slow':
@@ -64,6 +64,14 @@ class HttpProbeTests(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             request(self.url+'/slow',start+.15,threading.Event())
         self.assertLess(time.monotonic()-start,1)
+
+    def test_health_falls_back_to_proxy_path(self):
+        flag=threading.Event()
+        evidence=wait_health_any([self.url+'/missing',self.url+'/healthcheck'],
+                                 time.monotonic()+3,flag)
+        self.assertEqual(evidence[0]['status'],200)
+        self.assertTrue(evidence[0]['url'].endswith('/healthcheck'))
+        self.assertEqual(evidence[0]['attempted'][0]['status'],404)
 
     def test_smoke_uses_reviewed_budget_beyond_ten_seconds(self):
         result=smoke_completion(self.url+'/delayed','model',time.monotonic()+15,threading.Event())

@@ -52,7 +52,9 @@ def prepare(request):
         # A new evaluation task never inherits the producer's release authority.
         service=dict(service_id=service_id,endpoint=endpoint,model=model,ownership='external',
                      deployment_summary=None,permissions=dict(reset_cache=False,restart=False,release=False))
-        service['health_path'] = supplied.get('health_path', '/health') if 'service' in request else request.get('health_path', '/health')
+        service['health_path'] = (supplied.get('health_path') if 'service' in request else request.get('health_path')) or None
+        if service['health_path'] is None:
+            del service['health_path']
         plan=dict(schema_version='1.0',task_id=request['task_id'],intent='external_eval',service=service,
                   cases=copy.deepcopy(request['cases']),test_binding='tester',unresolved=[],
                   policy=copy.deepcopy(request.get('policy',dict(idle_timeout_seconds=900,

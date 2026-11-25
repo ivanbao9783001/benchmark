@@ -120,7 +120,7 @@ def summarize(folder,case=None):
     except Exception:
         pass
     report=dict(schema_version='1.0',status='VERIFIED' if complete else 'UNVERIFIED',instances=records,
-                window=before['window'],warmup_route_coverage='UNVERIFIED',performance_validity='UNVERIFIED')
+                window=before['window'],warmup_route_coverage='UNVERIFIED')
     report['routing_coverage']='VERIFIED' if complete and all(item.get('routing_coverage')=='VERIFIED' for item in records) else 'UNVERIFIED'
     if case is not None and case['num_warmups']==0:
         report['warmup_route_coverage']='NOT_REQUESTED'

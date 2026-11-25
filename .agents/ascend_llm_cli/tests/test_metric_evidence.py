@@ -36,7 +36,9 @@ class MetricEvidenceTests(unittest.TestCase):
             result=self.run_case(folder,payload(10,3),payload(30,8))
             self.assertEqual(result['status'],'VERIFIED')
             self.assertEqual(result['hit_ratio'],.25)
-            self.assertEqual(result['performance_validity'],'UNVERIFIED')
+            # Prefix evidence reports prefix counters only; performance_validity
+            # stays authoritative in the evaluation result / stage-result.
+            self.assertNotIn('performance_validity',result)
 
     def test_missing_reset_or_inconsistent_counters_are_not_zeroes(self):
         for last in (b'',payload(5,1),payload(11,20),payload('NaN',4)):

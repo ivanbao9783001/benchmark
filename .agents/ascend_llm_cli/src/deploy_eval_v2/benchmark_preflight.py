@@ -69,10 +69,22 @@ def main():
     result=inspect_environment(request['tester'],request['case'],config_path=request['config'])
     if request.get('endpoint'):
         from urllib.request import urlopen
-        with urlopen(request['endpoint'].rstrip('/')+request.get('health_path', '/health'), timeout=10) as response:
-            if response.status != 200:
-                raise ProtocolError('INVALID_INPUT: service unhealthy from tester environment')
-        result['service_health'] = 'VERIFIED_FROM_TESTER'
+        paths=[request['health_path']] if request.get('health_path') else ['/health','/healthcheck']
+        attempts=[]
+        for path in paths:
+            try:
+                with urlopen(request['endpoint'].rstrip('/')+path, timeout=10) as response:
+                    if response.status == 200:
+                        result['service_health'] = 'VERIFIED_FROM_TESTER'
+                        result['service_health_path'] = path
+                        if attempts:
+                            result['service_health_attempts'] = attempts
+                        break
+                    attempts.append(dict(path=path,status=response.status))
+            except OSError as exc:
+                attempts.append(dict(path=path,error=type(exc).__name__))
+        else:
+            raise ProtocolError('INVALID_INPUT: service unhealthy from tester environment')
     atomic_json(Path(args.result),result)
 
 

@@ -38,7 +38,7 @@ class EvaluateTests(unittest.TestCase):
                         ('normalize_external_plan',dict(return_value=(plan,[]))),
                         ('validate_eval_bindings',dict(return_value=None)),
                         ('require_linux',dict(return_value=None)),
-                        ('wait_health',dict(return_value=[])),
+                        ('wait_health_any',dict(return_value=[dict(url='http://unused/health',status=200)])),
                         ('prepare_case',dict(side_effect=prepare)),
                         ('run_logged',dict(side_effect=run)),
                         ('validate_native_result',dict(return_value={})),

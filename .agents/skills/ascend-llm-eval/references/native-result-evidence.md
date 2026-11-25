@@ -23,9 +23,11 @@ the synthetic target and the observed length is diagnostic only.
 
 Passing native requests does not establish a valid steady-state window or server
 metric agreement. Those separate checks are implemented in performance_evidence.py
-and result-validation.md; the result keeps performance_validity=UNVERIFIED until
-they are satisfied. Local tests use generated native-format evidence, not a real
-AISBench run.
+and result-validation.md; the evaluation result keeps performance_validity=UNVERIFIED
+until they are satisfied. `prefix-evidence.json` reports prefix counters and routing
+coverage only and does not carry its own `performance_validity`; that field stays
+authoritative in the result/stage evidence. Local tests use generated native-format
+evidence, not a real AISBench run.
 
 This module covers the `perf` branch only. `mode=acc` uses accuracy_evidence.py,
 which validates native GPQA predictions/results/logs and forwards the evaluator's

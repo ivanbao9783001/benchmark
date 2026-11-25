@@ -84,8 +84,11 @@ def serve(root, task_id, executor, identity=None):
                         raise ProtocolError('TRANSPORT_PROTOCOL_ERROR')
                 except (ValueError, KeyError, TypeError, OSError, IndexError) as exc:
                     code = str(exc).split(':', 1)[0] if isinstance(exc, ProtocolError) else 'INVALID_INPUT'
+                    # Keep the actionable detail (e.g. the cancel-before-stop hint)
+                    # within the response schema's 1024-character limit.
+                    message = ' '.join(str(exc).split())[:1024] if isinstance(exc, ProtocolError) else code
                     response = envelope(task_id, 0, 'ERROR')
-                    response['error'] = dict(code=code, message=code, retryable=False)
+                    response['error'] = dict(code=code, message=message, retryable=False)
                 # Socket output is outside all runtime/journal locks.
                 try:
                     self.wfile.write(encode(response)+b'\n')
@@ -97,7 +100,13 @@ def serve(root, task_id, executor, identity=None):
 
         with Server(str(endpoint), Handler) as server:
             os.chmod(endpoint, 0o600)
-            server.serve_forever()
+            try:
+                server.serve_forever()
+            finally:
+                try:
+                    endpoint.unlink()
+                except FileNotFoundError:
+                    pass
 
 
 def main():
