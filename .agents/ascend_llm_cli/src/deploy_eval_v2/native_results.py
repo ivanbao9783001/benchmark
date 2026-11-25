@@ -134,7 +134,7 @@ def validate_native_result(folder,case,*,deadline=None,cancelled=None):
         checksum=hashlib.sha256()
         timing_count=0;max_latency=0
         timings=[]
-        token_stats={key:dict(count=0,total=0) for key in ('input_tokens','output_tokens')}
+        token_stats={key:dict(count=0,total=0,min=None,max=None) for key in ('input_tokens','output_tokens')}
         with path.open('rb') as source:
             while True:
                 check()
@@ -170,6 +170,10 @@ def validate_native_result(folder,case,*,deadline=None,cancelled=None):
                 for key,stat in token_stats.items():
                     if type(row.get(key)) is int and row[key]>=0:
                         stat['count']+=1;stat['total']+=row[key]
+                        # Keep the measured spread; synthetic lengths are targets
+                        # and consumers compare observed means across candidates.
+                        stat['min']=row[key] if stat['min'] is None else min(stat['min'],row[key])
+                        stat['max']=row[key] if stat['max'] is None else max(stat['max'],row[key])
                 if len(seen)>case['formal_requests']:
                     raise ProtocolError('INVALID_INPUT: native request count exceeds plan')
         if len(seen)!=case['formal_requests']:

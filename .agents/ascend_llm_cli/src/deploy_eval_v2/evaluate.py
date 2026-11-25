@@ -50,10 +50,16 @@ def prepare_case(plan, bindings, case_id, folder, check_files=True):
 
 
 def matches_prefix_target(observation, case):
+    """Gate only on measured prefix coverage.
+
+    Synthetic length is a tool target, not a promise: random token ids decoded
+    to text and re-tokenized by the service never reproduce the exact count, so
+    exact_match is diagnostic evidence and must not decide pass/fail.
+    """
     from .aisbench_cli import synthetic_config
     minimum = synthetic_config(case)['TokenIdConfig']['PrefixLen']
     common = observation.get('common_prefix_tokens')
-    return (observation.get('status') == 'MEASURED' and observation.get('exact_input_lengths') is True
+    return (observation.get('status') == 'MEASURED'
             and (minimum == 0 or isinstance(common, int) and common >= minimum))
 
 
@@ -150,6 +156,16 @@ def run_performance_case(plan, tester, case, folder, argv, runner, environment,
         else:
             dataset_verified = matches_prefix_target(synthetic, case)
         verified=verified and dataset_verified and prefix['status']=='VERIFIED' and prefix['routing_coverage']=='VERIFIED' and prefix['warmup_route_coverage'] in ('VERIFIED','NOT_REQUESTED')
+    # Measured input length prefers native details, where AISBench reports the
+    # service prompt_tokens when available and only falls back to its tokenizer.
+    observed=None
+    if synthetic is not None:
+        observed={k: synthetic[k] for k in ('request_count','input_tokens','common_prefix_tokens') if k in synthetic}
+        groups=native.get('request_groups') or []
+        stats=(groups[0].get('observed_tokens') or {}).get('input_tokens') if len(groups)==1 else None
+        if 'input_tokens' in observed and stats and stats['count']:
+            observed['input_tokens']=dict(min=stats['min'],max=stats['max'],
+                                          mean=round(stats['total']/stats['count'],3))
     result = dict(schema_version='1.0', evaluation_type='perf', service_id=plan['service']['service_id'],
                   case_id=case['case_id'], execution_status='SUCCEEDED', evidence_status='COMPLETE' if verified else 'PARTIAL',
                   performance_validity='VERIFIED' if verified else 'UNVERIFIED',
@@ -157,8 +173,7 @@ def run_performance_case(plan, tester, case, folder, argv, runner, environment,
                   performance_evidence=dict(host=verified_local_host,path=str(folder/'performance-evidence.json')),
                   prefix_metric_status=prefix['status'],prefix_evidence=dict(host=verified_local_host,path=str(folder/'prefix-evidence.json')),
                   reason='Native request performance evidence verified' if verified else 'See performance and prefix evidence for unverified conditions',
-                  time=now(), actual_load=dict(planned=case, observed=({k: synthetic[k] for k in
-                      ('request_count','input_tokens','common_prefix_tokens') if k in synthetic} if synthetic else None)))
+                  time=now(), actual_load=dict(planned=case, observed=observed))
     if synthetic is not None:
         result['synthetic_evidence']=dict(status=synthetic['status'],host=verified_local_host,path=str(folder/'synthetic-evidence.json'))
     return result

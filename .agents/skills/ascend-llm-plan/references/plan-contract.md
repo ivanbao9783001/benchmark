@@ -10,6 +10,21 @@ Optional tester.environment is a map of explicit environment variable strings ap
 
 Production preflight checks interpreter and console entrypoint ownership, tokenizer assets, config imports and dataset capability. Explicit authorized cache reset requires frozen per-instance targets; never infer these from the service URL. Execution and evidence/performance validity remain separate outcomes.
 
+## bindings 的端口形状
+
+`bindings.nodes.<node>.deployments` 以 `deployment.id` 为键，端口再按实例 id 分层：
+
+```json
+"deployments": {
+  "<deployment-id>": {
+    "network": {"ip": "<节点 IP>", "interface": "<网卡>"},
+    "ports": {"<instance-id>": {"http": 8020, "hccl": 64023}}
+  }
+}
+```
+
+三种位置的端口形状不同，不要互相照搬：top_input 的 `deployment.instances[].ports` 是实例内平铺（`{"http": 8020}`）；plan 同名位置是跨度宽度；只有 bindings 需要实例 id 这一层。`freeze-inputs` 报 `deployment bindings schema at <JSON 路径>` 时，按路径核对这一层。
+
 ## 借用已有容器（existing_container）
 
 当任务使用运行中的已有容器而不是新建容器时，plan 与 bindings 的形态同时改变：
@@ -22,7 +37,7 @@ Production preflight checks interpreter and console entrypoint ownership, tokeni
 
 ## 容器内测试工具
 AISBench 可位于宿主或已有运行容器。宿主未找到工具时，继续只读检查已有容器的工具、解释器、依赖、tokenizer和网络；不要要求用户重复提供可自行发现的绑定。
-容器 tester 在原有 host/work_root/machine_id 字段之外设置 container={"id":"完整64位容器ID","image":"sha256:完整镜像摘要"}；`self` 节点可省略 `image`，非 self 节点仍须给出摘要；python、aisbench、model_path、environment、datasets 路径均属于容器内环境。`machine_id` 在容器内运行 `deploy-eval-v2 identity` 取证（优先 `/etc/machine-id`，为空时用 hostname 派生）。host_python（默认 /usr/bin/python3）和 control.json 的 python 属于宿主，用于框架，不要求容器安装框架依赖。work_root 是已授权宿主工作根，执行器在容器同路径下建立独立操作目录，通过公开CLI发布工具代码与收回原生产物，不要求已有容器挂载该目录。若容器没有把 work_root 暴露在同一路径（例如宿主 /home/u 挂载为容器 /workspace），再加 container_work_root 声明容器内操作根；此时只有 work_root/control.json/host_python 用宿主路径，其余 tester 路径仍用容器内路径。container_work_root 只能与 container 同时出现，必须是容器内绝对路径且不含 `:`。它可以是容器内独立目录（如 /tmp/de-eval-tester，执行器在容器内建目录、跑完回传），也可以恰好与宿主 work_root 是同一 bind mount；后者两侧看到同一物理目录，不要假定容器目录必然不存在。
+容器 tester 在原有 host/work_root/machine_id 字段之外设置 container={"id":"完整64位容器ID","image":"sha256:完整镜像摘要"}；`self` 节点可省略 `image`，非 self 节点仍须给出摘要；python、aisbench、model_path、environment、datasets 路径均属于容器内环境。`machine_id` 在容器内运行 `deploy-eval-v2 identity` 取证（优先 `/etc/machine-id`，为空时用 hostname 派生）。host_python（默认按 contract 的探测顺序取已核验解释器，Python>=3.11 且能 import jsonschema）和 control.json 的 python 属于宿主，用于框架，不要求容器安装框架依赖。work_root 是已授权宿主工作根，执行器在容器同路径下建立独立操作目录，通过公开CLI发布工具代码与收回原生产物，不要求已有容器挂载该目录。若容器没有把 work_root 暴露在同一路径（例如宿主 /home/u 挂载为容器 /workspace），再加 container_work_root 声明容器内操作根；此时只有 work_root/control.json/host_python 用宿主路径，其余 tester 路径仍用容器内路径。container_work_root 只能与 container 同时出现，必须是容器内绝对路径且不含 `:`。它可以是容器内独立目录（如 /tmp/de-eval-tester，执行器在容器内建目录、跑完回传），也可以恰好与宿主 work_root 是同一 bind mount；后者两侧看到同一物理目录，不要假定容器目录必然不存在。
 冻结前 docker inspect 核对完整ID、镜像、运行状态；只读检查容器内Python、AISBench版本及依赖、权重可见性、被测endpoint从容器可达。工具存在不代表依赖完整。使用公开CLI执行，不手写docker exec负载封装。容器仅提供测试环境，不授予停止、重启、删除容器或被测服务的权限。执行器只停止本任务工具进程组；证据回收失败或清理未知必须报告，不能标记完整。
 
 ## 服务健康路径

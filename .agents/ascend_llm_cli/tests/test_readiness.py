@@ -32,8 +32,8 @@ def device_map_values(mapping, devices=(5,6), mode='existing_container', self_no
 class DeviceIdMapReadinessTests(unittest.TestCase):
     """Declared mappings are statically validated and probed on the local node."""
 
-    def readiness(self, mapping, observed=None, mode='existing_container'):
-        values,request,config=device_map_values(mapping,mode=mode)
+    def readiness(self, mapping, observed=None, mode='existing_container', self_node=True):
+        values,request,config=device_map_values(mapping,mode=mode,self_node=self_node)
         with patch('deploy_eval_v2.readiness.verify_frozen',return_value=values),\
              patch('deploy_eval_v2.readiness.install_archive'),\
              patch('deploy_eval_v2.readiness.shutil.which',return_value=None),\
@@ -57,6 +57,17 @@ class DeviceIdMapReadinessTests(unittest.TestCase):
 
     def test_absent_map_keeps_the_existing_readiness_path(self):
         self.assertEqual(self.readiness(None,None)['blockers'],[])
+
+    def test_absent_map_blocks_a_remapped_local_self_node(self):
+        ready=self.readiness(None,{5:5,6:6})
+        self.assertEqual(ready['status'],'READY_FOR_HOST_PREFLIGHT')
+        blocked=self.readiness(None,{5:0,6:1})
+        self.assertEqual(blocked['status'],'BLOCKED')
+        self.assertIn('DEVICE_ID_MAP_REQUIRED',blocked['blockers'])
+        self.assertEqual(blocked['remote_checks'],'NOT_RUN')
+        self.assertNotIn('DEVICE_ID_MAP_REQUIRED',
+                         self.readiness(None,{5:0,6:1},mode='owned_container',
+                                        self_node=False)['blockers'])
 
 
 class ReadinessTests(unittest.TestCase):

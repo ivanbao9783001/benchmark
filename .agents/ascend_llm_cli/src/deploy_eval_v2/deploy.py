@@ -50,6 +50,14 @@ def _execute_attempt(compiled, nodes, execution, evidence_path, cancelled, *, he
     evidence_path = Path(evidence_path)
     def command(group, kind, instance=''):
         return kind+'-'+digest([attempt,group,instance])[:32]
+    def effect_started(node, key):
+        """A failed create is uncertain only if its first side effect had begun.
+
+        Adapters without the marker (for example the remote relay) stay
+        conservative and keep the old behaviour.
+        """
+        checker = getattr(getattr(node, 'guard', None), 'effect_started', None)
+        return True if checker is None else bool(checker(command(key, 'create')))
     def check():
         remaining(deadline)
         if cancelled.is_set():
@@ -109,7 +117,8 @@ def _execute_attempt(compiled, nodes, execution, evidence_path, cancelled, *, he
         for name,node in nodes.items():
             keys = [k for k,g in groups.items() if g['node']==name]
             known = [created[k]['container_id'] for k in keys if k in created]
-            uncertain = any(k in attempted and k not in created for k in keys)
+            uncertain = any(k in attempted and k not in created and
+                            effect_started(nodes[groups[k]['node']], k) for k in keys)
             resources = sorted({r for k in keys for r in
                 ['npu:'+str(n) for n in groups[k]['npu_ids']]+['tcp:'+str(p) for p in groups[k]['ports']]})
             try:

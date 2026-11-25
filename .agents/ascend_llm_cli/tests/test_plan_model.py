@@ -98,6 +98,12 @@ class BindingTests(unittest.TestCase):
             with self.assertRaises(ProtocolError):
                 validate_eval_bindings(external_plan(), bindings)
 
+    def test_schema_error_names_the_failing_field(self):
+        plan, bindings = external_plan(), eval_bindings()
+        bindings['testers']['tester']['python'] = 7
+        with self.assertRaisesRegex(ProtocolError, r'testers\.tester\.python'):
+            validate_eval_bindings(plan, bindings)
+
     def test_file_prefix_evidence_and_format(self):
         plan, bindings = external_plan(), eval_bindings()
         dataset = dict(type='jsonl', path='/data/input.jsonl', input_column='question', output_column='answer')

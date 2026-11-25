@@ -120,10 +120,11 @@ def check_ready(request,config):
         declared={slot:bound['nodes'][slot]['container']['device_id_map'] for slot in slots
                   if isinstance(bound['nodes'][slot].get('container'),dict)
                   and 'device_id_map' in bound['nodes'][slot]['container']}
+        deployment=plan.get('deployment',{})
+        existing=(deployment.get('runtime',{}).get('mode','owned_container')=='existing_container')
+        devices=node_physical_devices(deployment) if deployment.get('instances') else {}
         if declared:
-            existing=(plan['deployment'].get('runtime',{}).get('mode','owned_container')=='existing_container')
             require(existing,'DEVICE_ID_MAP_INVALID')
-            devices=node_physical_devices(plan['deployment'])
             valid=True
             for slot,mapping in declared.items():
                 try:
@@ -142,6 +143,16 @@ def check_ready(request,config):
                         require(False,'DEVICE_ID_MAP_UNVERIFIABLE')
                     elif any(observed.get(int(key))!=value for key,value in declared[slot].items()):
                         require(False,'DEVICE_ID_MAP_MISMATCH')
+        elif existing:
+            # An undeclared map on a local self node can be probed offline. Stop
+            # here instead of finishing publish/start only to fail at create.
+            for slot in self_slots:
+                observed=read_local_chip_logic_map()
+                if observed is None:
+                    break
+                if any(observed.get(device)!=device for device in devices.get(slot,set())):
+                    require(False,'DEVICE_ID_MAP_REQUIRED')
+                    break
         evaluation=plan.get('evaluation')
         if evaluation:
             tester=bound['testers'][evaluation['test_binding']]

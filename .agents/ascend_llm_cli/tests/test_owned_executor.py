@@ -95,6 +95,7 @@ class OwnedExecutorTests(unittest.TestCase):
                 ['npu:'+str(n) for n in group['npu_ids']]+['tcp:'+str(p) for p in group['ports']]})
             node.guard.claim(resources)
             node.guard.command('create-1',{'kind':'create'},lambda:dict(container_id='unused'))
+            node.guard.mark_effect_started('create-1')
             kind,status,data=executor.cancel_idle('op')
             self.assertEqual((kind,status),('operation.failed','RECOVERY_REQUIRED'))
             self.assertFalse(data['claims_released'])
@@ -118,6 +119,7 @@ class OwnedExecutorTests(unittest.TestCase):
                 ['npu:'+str(n) for n in group['npu_ids']]+['tcp:'+str(p) for p in group['ports']]})
             node.guard.claim(resources)
             node.guard.command('create-1',{'kind':'create'},lambda:dict(container_id='unused'))
+            node.guard.mark_effect_started('create-1')
             api.submit(dict(protocol_version='1.0',task_id='t',kind='deploy',request_id='d',
                             expected_version=0,plan_ref=reference['sha256'],wait_ms=1000))
             self.assertEqual(api.status()['task_state'],'RECOVERY_REQUIRED')

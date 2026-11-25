@@ -38,7 +38,7 @@ AISBench 可位于宿主或已有运行容器。宿主未找到工具时，继�
 模型和代理健康路由必须分别从本轮参考或实际接口确认，不统一套用/health。deploy实例checks.health绑定各自路径；service.json携带入口health_path；部署后的eval沿用该路径。独立prepare-inputs(stage=eval)允许health_path字段，与endpoint同源；默认/health只适用于已确认提供该路由的服务。用户提供service对象时沿用其health_path。仅设置健康路径不授予服务管理权限。AISBench预检也从容器实际测试环境访问同一路由。
 
 ## 有效性与日志归集
-普通原生性能case没有shared_prefix_ratio时，性能有效性由原生请求记录、负载和性能汇总证据决定；附加prefix指标保留各自验证状态，不作为普通case的必需门槛。有shared_prefix_ratio时仍须核验数据、前缀指标、路由和预热覆盖，不因普通case规则放宽。原生合成input_tokens是工具配置目标；实际重新分词长度另列synthetic-evidence，不把目标长度冒充实测长度，不自行改造合成数据。
+普通原生性能case没有shared_prefix_ratio时，性能有效性由原生请求记录、负载和性能汇总证据决定；附加prefix指标保留各自验证状态，不作为普通case的必需门槛。有shared_prefix_ratio时仍须核验数据、前缀指标、路由和预热覆盖，不因普通case规则放宽。原生合成input_tokens是工具配置目标；实际重新分词长度另列synthetic-evidence，不把目标长度冒充实测长度，不自行改造合成数据。目标与实测并列展示，长度偏差只作诊断、不作为通过门槛（synthetic的exact标记同理）；有shared_prefix_ratio时按实测前缀覆盖判定；锚与候选对比时以实测输入长度均值判断负载是否可比。
 
 本地tester（含同宿主容器tester）的case目录为results/<eval operation_id>/benchmark，原生AISBench控制台日志是该目录/aisbench.log；原生summary/details/worker日志由该目录/validated.json和performance-evidence.json中的引用定位，逐一归集。不要误读logs/aisbench.log。preflight.log、postflight.log、container.log是case目录下的框架诊断文件，内容同时按source标签汇入task.jsonl；task.jsonl中出现标签不等于对应文件已归集，容器与远端场景按回传证据核验。JSON证据preflight.json、synthetic-evidence.json等仍在case目录。服务原生日志为logs/<instance>.service.log。远端tester使用响应的remote_evidence定位，不能把主机路径猜为本地路径。
 

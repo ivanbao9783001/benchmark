@@ -66,7 +66,7 @@ control.json 是受信控制端配置，固定位于交付根 `task_root/control
 - UNKNOWN_OUTCOME、协议坏 JSON、SSH 断开：先查状态和原游标，不创建新任务或重跑部署。
 - RECOVERY_REQUIRED、release.unverified：保留现场，停止复用资源，核验归属与执行证据。
 
-退出码已实现：输入/状态错误 2、通信未知 3、确认操作失败 4；退出码 0 只表示成功提交/查询/等待，业务成败仍以事件为准。
+退出码已实现：输入/状态错误 2、通信未知 3、确认操作失败 4；退出码 0 只表示成功提交/查询/等待（含停机后的离线状态查询），业务成败仍以事件为准。
 
 普通响应预算 8 KiB、每页最多 10 关键事件；日志默认 8 KiB，显式最多 32 KiB，包含 JSON 转义与元数据。先按 artifact_ref 读取一次所需片段，再按 next_offset 续读；不从 SSH 获取整份服务日志。定位支持互斥的 --tail-bytes N、--line-start N --line-end M、--keyword TEXT；按返回的扫描游标续读。task.jsonl 为统一框架日志，service.json 为部署交接（`endpoint` 记节点 IP；同机同容器可用 `127.0.0.1:<port>`，远端 tester 必须用节点 IP，回环不跨机）；results/ 与 logs/ 下只读相应证据，禁止目录遍历。它们都在节点运行根 `node_root`（existing 模式的原生产物在 `container_root`），交付根的 `results/` 只放摘要与引用。
 # Task cancellation clarification
@@ -77,6 +77,13 @@ operation ID is supplied it must match the active operation. Task cancellation i
 durable and prevents later phases; cleanup completes asynchronously and its event
 must be checked. Acceptance is not evidence of resource release.
 
+When the task already ended with `cleanup_status=VERIFIED` and the owner holds no
+claim, an idle task cancel reuses that verdict instead of re-running cleanup: it
+emits `operation.cancelled`/`CANCELLED` with `reused_from_seq` and does not touch
+claims or command history. If a claim remains, cleanup runs again as usual.
+
 本地业务输入：`prepare-inputs --request task.json`（详见 plan 技能）返回 plan/bindings 路径及待审阅默认值；`export-contracts --request export.json` 导出与 CLI 同版本的权威 JSON Schema。新日志布局仅用于新任务，不用新包接管历史冻结任务。远端日志归集未完成时 task.jsonl 记录 remote.log.pending，不能声称日志完整；原生服务/AISBench 日志保持原位。
 
 当前 CLI：原子JSON产物采用与事件摘要相同的规范序列化，expected-sha256验证文件字节；不改旧包旧产物。read-result在runtime socket不可用时，可核对持久任务身份后只读本任务节点运行根的受限路径产物；不恢复执行、不改变状态或授权其他任务。停机后仍按offset/next_offset有界取回日志，并独立核验完整性。
+
+get-status 同样支持停机后离线查询：socket 不可用时，核对同一持久身份后只读 state.json，返回 `offline=true`、`source=state.json`、`runtime=STOPPED|UNOBSERVED`。若 task.jsonl 末条记录比快照新，则标记 `stale=true` 并给出 `journal_next_cursor`；末条为终态事件时以该终态为准。身份或快照无法核验时仍返回 UNKNOWN_OUTCOME。该路径不恢复执行、不写状态、不触碰 claims/effects。`runtime=UNOBSERVED` 且状态非终态时不要再 wait-event，按 RECOVERY_REQUIRED 保留现场。进程已确认退出的重复 stop-runtime 返回 `runtime_stopped=true` 与 `already_stopped=true`；进程仍存活但 socket 不可达时仍为 UNKNOWN_OUTCOME。

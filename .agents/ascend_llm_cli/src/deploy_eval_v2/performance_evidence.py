@@ -79,6 +79,13 @@ def summarize(folder,case,native,*,deadline=None,cancelled=None):
                 raise ValueError('SUMMARY_THROUGHPUT_INCONSISTENT')
             item.update(duration_seconds=duration,requests=int(total),request_throughput=throughput,
                         summary_ref=path.relative_to(root).as_posix())
+            # Synthetic length is a target, not a promise: pair it with the
+            # measured spread so anchor and candidate loads stay comparable.
+            stats=(group.get('observed_tokens') or {}).get('input_tokens') or {}
+            if case.get('input_tokens') is not None and stats.get('count'):
+                item['input_tokens']=dict(target=case['input_tokens'],
+                    observed=dict(scope='formal_requests',count=stats['count'],min=stats.get('min'),
+                                  max=stats.get('max'),mean=round(stats['total']/stats['count'],3)))
             window=group.get('timing_window')
             if window and not case.get('steady_state') and not math.isclose(duration,window['total_seconds'],rel_tol=.01,abs_tol=.001):
                 raise ValueError('SUMMARY_TIMING_MISMATCH')

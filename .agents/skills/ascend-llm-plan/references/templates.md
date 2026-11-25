@@ -66,7 +66,7 @@
 | `mode` | `perf` | 可省略 | 省略时按 perf 处理，但建议显式写 |
 | `dataset_id` | `synthetic` | **否** | 必须与 tester.datasets 中的键一致 |
 | `concurrency` | 16 | 是 | 负载形状 |
-| `input_tokens` / `output_tokens` | 1024 / 256 | 是 | 目标长度，不是实测长度 |
+| `input_tokens` / `output_tokens` | 1024 / 256 | 是 | 目标长度，不是实测长度；也不作为通过门槛，实测分布见性能证据 |
 | `steady_state` | `true` | 是 | 稳态才有多窗口汇总 |
 | `num_warmups` | 1 | 是 | 预热轮数（≥0） |
 | `reset_cache` | `false` | 是 | 清缓存是独立授权，不得默认开启 |
@@ -136,7 +136,7 @@ GSM8K：
 
 拆成两个文件，避免整段贴错层级：`deploy-runtime-qwen3-8b.json` 整体贴到 `deployment.runtime`；`deploy-instance-qwen3-8b-tp2.json` 整体贴到 `deployment.instances[0]`。
 
-借用已有容器时，`deployment.runtime` 改用 `deploy-runtime-existing-container.json`（只有 `{"mode":"existing_container"}`），`deployment.image` **省略**（不要写 `null`），也不需要 `{{image.digest}}`；容器身份写入 bindings 的 `container`，并补 `container_work_root`。tester 在容器内时同样写 `container` 与 `container_work_root`；容器内可直接补 `host_python`，缺省 `/usr/bin/python3`。启动档仍可描述实例与参数，但 `shm_size`、`privileged`、`devices` 等容器创建参数不会生效（容器已存在），不要据此假定可以调整容器规格，也不要假定工作根目录不存在。
+借用已有容器时，`deployment.runtime` 改用 `deploy-runtime-existing-container.json`（只有 `{"mode":"existing_container"}`），`deployment.image` **省略**（不要写 `null`），也不需要 `{{image.digest}}`；容器身份写入 bindings 的 `container`，并补 `container_work_root`。tester 在容器内时同样写 `container` 与 `container_work_root`；容器内可直接补 `host_python`，缺省按 contract 的探测顺序取已核验解释器（Python>=3.11 且能 import jsonschema）。启动档仍可描述实例与参数，但 `shm_size`、`privileged`、`devices` 等容器创建参数不会生效（容器已存在），不要据此假定可以调整容器规格，也不要假定工作根目录不存在。
 
 ### 替换清单（提交前必须全部消除）
 

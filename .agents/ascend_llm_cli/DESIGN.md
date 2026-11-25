@@ -20,7 +20,7 @@ prepare-inputs：deploy 输入为 stage/destination/deployment/bindings；deploy
 
 service.json：包含 schema_version/task_id/service_id/ownership/endpoint/model、runtime/bundle 摘要、容器归属、保留策略、health_time 与 health_evidence_ref。引用的部署结果同时保存健康与冒烟证据。单份 service.json 是交接源，禁止再在每个操作目录复制服务副本。`endpoint` 固定记 `network.ip` 形式；colocated/existing 同容器因编译监听为 `0.0.0.0`，也可用 `http://127.0.0.1:<port>`，但回环只在服务所在节点/容器有效，远端 tester 必须用节点 IP；service.json 不复制多份地址。eval 使用其中的 endpoint/model/service_id；释放权不随对象复制传播。
 
-result JSON：包含 task/operation/service/case 身份、`evaluation_type`、execution_status、evidence_status、`actual_load` 及对应模式的证据引用。`evaluation_type=perf` 时使用 performance_validity、performance 与性能证据；`evaluation_type=acc` 时使用 accuracy_validity、accuracy 与 accuracy_evidence。性能条目以明确字段表示单位，如 duration_seconds 和 request_throughput（req/s）；精度沿用 AISBench 评测器的百分制 accuracy。未知、缺失或无效证据不可填成零。只有证据 COMPLETE 才能把对应有效性标记为 VERIFIED。
+result JSON：包含 task/operation/service/case 身份、`evaluation_type`、execution_status、evidence_status、`actual_load` 及对应模式的证据引用。`evaluation_type=perf` 时使用 performance_validity、performance 与性能证据；`evaluation_type=acc` 时使用 accuracy_validity、accuracy 与 accuracy_evidence。性能条目以明确字段表示单位，如 duration_seconds 和 request_throughput（req/s）；精度沿用 AISBench 评测器的百分制 accuracy。未知、缺失或无效证据不可填成零。性能证据把配置的 input_tokens 目标与原生 details 实测的 min/mean/max 并列记录（AISBench 优先回报服务端 prompt_tokens，缺省才回落 tokenizer）；合成长度偏差只作诊断，不作为通过条件。只有证据 COMPLETE 才能把对应有效性标记为 VERIFIED。
 
 release JSON：保存每节点资源结果与 cleanup_status。release.unverified 保留 claims，不能以请求接纳或进程退出替代释放核验。
 
@@ -63,7 +63,7 @@ TASK/
   runtime/             # 不可变执行包
   service.json         # 仅成功部署产生
   task.jsonl           # 事件与框架诊断唯一流
-  state.json           # 可重建状态快照
+  state.json           # 可重建状态快照（runtime 停机后 get-status 离线读取此快照）
   results/             # 各次操作结果、必要的原生证据和索引
   logs/                # 仅服务原生日志
   .runtime/            # 锁、socket、启动身份和进程记录

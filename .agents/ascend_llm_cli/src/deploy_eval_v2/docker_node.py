@@ -117,6 +117,8 @@ class DockerNode:
                     raise ProtocolError('INVALID_INPUT: unsupported mount separator')
                 argv += ['-v', mount['source']+':'+mount['target']+(':ro' if mount.get('read_only') else '')]
             argv += [image, 'sleep', 'infinity']
+            # Everything above is read-only; mark before docker create.
+            self.guard.mark_effect_started(command_id)
             raw = self.call(argv, deadline, cancelled).decode('ascii').strip()
             self.inspect_owned(raw, deadline, cancelled)
             return dict(container_id=raw, image_id=image, name=name, resources=resources)

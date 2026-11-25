@@ -21,4 +21,4 @@ release.completed 后检查逐资源结果及 resource_results_ref。release.unv
 
 get-status 后按当前版本提交 release，活动测试需先按授权 cancel 并等待清理证据。资源释放核验完成后，使用原 task_ref 和 nonce 执行 stop-runtime，核对 runtime_stopped=true。runtime 停止通过认证 socket 请求完成，不猜 PID 或运行系统服务命令。保留任务日志、请求、冻结包和结果，交付已释放/未知资源清单。
 
-失败任务仅在无活动操作且终态持久证据cleanup_status=VERIFIED时可stop-runtime；FAILED不自动代表仍占资源，也不代表已释放。RECOVERY_REQUIRED仍需先恢复核验，不能删锁或猜PID。owner 可提交 task 范围 cancel 触发核验：仅当该任务无 create/unknown 命令历史时释放 claims 并进入 CANCELLED，否则保持 RECOVERY_REQUIRED。
+失败任务仅在无活动操作且终态持久证据cleanup_status=VERIFIED时可stop-runtime；FAILED不自动代表仍占资源，也不代表已释放。cleanup_status=VERIFIED的RECOVERY_REQUIRED可收尾：create 在首个副作用前被前置校验拒绝时已释放 claims，不再需要人工。cleanup_status=UNVERIFIED的RECOVERY_REQUIRED仍需先恢复核验，不能删锁或猜PID。owner 可提交 task 范围 cancel 触发核验：仅当该任务无 create/unknown 命令历史，或 create 记录存在但无副作用标记时释放 claims 并进入 CANCELLED，否则保持 RECOVERY_REQUIRED。

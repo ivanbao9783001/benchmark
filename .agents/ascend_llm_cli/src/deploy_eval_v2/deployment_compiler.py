@@ -44,8 +44,15 @@ def expand(value, context, shell=False):
 def compile_bound_deployment(plan, bindings):
     validate_deploy_plan(plan)
     schema = load_json(Path(__file__).parent/'schemas/deploy-bindings.schema.json')
-    if next(Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(bindings), None):
-        raise ProtocolError('INVALID_INPUT: deployment bindings schema')
+    error = next(Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(bindings), None)
+    if error is not None:
+        # Point at the exact field: a bare "schema" error forced callers to
+        # reverse-engineer the nested port shape from the schema file.
+        hint = ('; ports are keyed by deployment id, then instance id: '
+                'nodes.<node>.deployments.<deployment-id>.ports.<instance-id>.<port-name>'
+                if 'ports' in error.json_path.split('.') else '')
+        raise ProtocolError('INVALID_INPUT: deployment bindings schema at '+
+                            error.json_path+': '+error.message+hint)
     if bindings['task_id'] != plan['task_id']:
         raise ProtocolError('INVALID_INPUT: deployment task identity')
     deployment = copy.deepcopy(plan['deployment'])

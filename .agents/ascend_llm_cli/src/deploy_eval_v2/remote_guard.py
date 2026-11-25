@@ -101,6 +101,15 @@ class HostGuard:
             for path in paths:
                 path.unlink()
 
+    def holds(self, resources):
+        """True while any listed resource is still claimed by this owner."""
+        with exclusive(self.root/'host.lock'):
+            for resource in resources:
+                path = self.root/'claims'/(hashlib.sha256(resource.encode()).hexdigest()+'.json')
+                if path.exists() and load_json(path) == dict(self.owner, resource=resource):
+                    return True
+        return False
+
     def command(self, command_id, payload, action):
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', command_id):
             raise ProtocolError('INVALID_INPUT: remote command identity')
@@ -116,23 +125,50 @@ class HostGuard:
                     raise ProtocolError('RECOVERY_REQUIRED: remote command outcome unknown')
                 return record['result']
             record = dict(owner=self.owner, command_id=command_id, payload_sha256=signature,
-                          effect_kind=payload.get('kind','unknown') if isinstance(payload,dict) else 'unknown',status='ACCEPTED')
+                          effect_kind=payload.get('kind','unknown') if isinstance(payload,dict) else 'unknown',
+                          effect_started=False,status='ACCEPTED')
             atomic_json(path, record)
             result = action()
             atomic_json(path, dict(record, status='COMPLETED', result=result))
             return result
 
-    def release_unstarted(self,resources):
-        """Only unlock a pre-create failure if durable history proves no create.
+    def _effect_path(self, command_id):
+        key = digest(dict(owner=self.owner, command_id=command_id))
+        return self.root/'effects'/(key+'.json')
 
-        Absence of an in-memory container ID is not enough. Old records without
-        effect classification are conservatively treated as unknown effects.
+    def mark_effect_started(self, command_id):
+        """Durably record that this command is about to perform its first side effect.
+
+        Pre-create checks (occupancy probes, device-map checks, identity and port
+        validation) are read-only and must not set this marker. It is written
+        before the first mutating call, so a crash after it is treated as
+        "effect possibly applied" and stays conservative.
+        """
+        atomic_json(self._effect_path(command_id), dict(owner=self.owner, command_id=command_id))
+
+    def effect_started(self, command_id):
+        return self._effect_path(command_id).exists()
+
+    def release_unstarted(self,resources):
+        """Only unlock a pre-create failure if durable history proves no side effect.
+
+        A create command is accepted before its read-only preflight runs, so the
+        acceptance alone does not prove an effect. New records carry
+        effect_started=False and the node writes a durable marker right before
+        its first mutating call. Records without that field (old format) and
+        unknown effects stay conservatively locked.
         """
         with exclusive(self.root/'host.lock'):
             for path in (self.root/'commands').glob('*.json'):
                 record=load_json(path)
-                if record.get('owner')==self.owner and record.get('effect_kind','unknown') in ('create','unknown'):
+                if record.get('owner')!=self.owner:
+                    continue
+                kind=record.get('effect_kind','unknown')
+                if kind=='unknown':
                     raise ProtocolError('RECOVERY_REQUIRED: prior resource effect requires inventory verification')
+                if kind=='create':
+                    if 'effect_started' not in record or self.effect_started(record['command_id']):
+                        raise ProtocolError('RECOVERY_REQUIRED: prior resource effect requires inventory verification')
             paths=[]
             for resource in resources:
                 path=self.root/'claims'/(hashlib.sha256(resource.encode()).hexdigest()+'.json')
@@ -142,7 +178,7 @@ class HostGuard:
                     paths.append(path)
             for path in paths:
                 path.unlink()
-        return dict(cleanup_status='VERIFIED',claims_released=True,basis='no durable create acceptance')
+        return dict(cleanup_status='VERIFIED',claims_released=True,basis='no durable side effect')
 
 
 def require_owned_container(inspect, task_id, token, container_id):

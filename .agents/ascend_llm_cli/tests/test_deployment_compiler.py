@@ -43,6 +43,13 @@ class DeploymentCompilerTests(unittest.TestCase):
             with self.assertRaises(ProtocolError):
                 compile_bound_deployment(plan, bound)
 
+    def test_schema_error_names_the_field_and_port_shape(self):
+        plan, bound = deploy_plan(), bindings()
+        bound['nodes']['node_a']['deployments']['pd-a']['ports'] = {'http': 18000, 'hccl': 18009}
+        with self.assertRaisesRegex(ProtocolError,
+                                    r"deployments\['pd-a'\]\.ports.*instance id"):
+            compile_bound_deployment(plan, bound)
+
 
 def colocated_plan():
     plan = deploy_plan()

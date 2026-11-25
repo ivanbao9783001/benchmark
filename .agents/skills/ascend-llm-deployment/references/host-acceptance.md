@@ -79,7 +79,7 @@ wait-event 的 after-seq 只使用实际交付的 next_cursor。
 | 场景 | 要求 |
 | --- | --- |
 | 发布/启动 | 摘要匹配；detached Python process 与 socket 身份匹配；同 nonce 不重复启动 |
-| existing 设备编号 | `placement.devices`/`npu_ids` 始终是宿主物理号；借用容器重编号时 bindings 必须声明 `container.device_id_map`。create 在占用探测后、启动前用容器内 `npu-smi info -m` 逐卡核对，证据写 `probes/<digest([command_id,'device-map'])>.json`；声明不符或未声明却检测到重编号即 `RECOVERY_REQUIRED`，`-m` 不可用且未声明时按旧行为放行并记 inconclusive |
+| existing 设备编号 | `placement.devices`/`npu_ids` 始终是宿主物理号；借用容器重编号时 bindings 必须声明 `container.device_id_map`。`self` 节点未声明却在本地 `npu-smi info -m` 中发现重编号时，`check-ready` 直接返回 `DEVICE_ID_MAP_REQUIRED`（`BLOCKED`，不发布、不启动）。create 在占用探测后、启动前用容器内 `npu-smi info -m` 逐卡核对，证据写 `probes/<digest([command_id,'device-map'])>.json`；声明不符或未声明却检测到重编号即 `RECOVERY_REQUIRED`，`-m` 不可用且未声明时按旧行为放行并记 inconclusive。这类拒绝发生在首个副作用之前，claims 会被释放、cleanup_status=VERIFIED，可按失败收尾并 stop-runtime |
 | 短阶段/长阶段 | 返回边界，或 RUNNING 后按游标得到边界 |
 | 观察中断 | 结束 client/SSH 后 runtime 仍在；重连无重复模型容器 |
 | 幂等 | 同 request_id 同内容返回原操作；不同内容拒绝 |
@@ -90,7 +90,7 @@ wait-event 的 after-seq 只使用实际交付的 next_cursor。
 | 输出 | 普通响应 <=8192 字节；日志按引用读取，原日志保留 |
 
 保留完整交付根与节点运行根、请求文件、响应及现场版本；不要只保存最终 PASS。
-恢复不明资源时按初版契约进入 RECOVERY_REQUIRED，保留证据并人工现场核验，不盲目重跑。自动跨节点修复不属于初版要求。owner 可用 task 范围 cancel 发起核验收尾：无 create/unknown 命令历史才释放 claims，有则保持 RECOVERY_REQUIRED。
+恢复不明资源时按初版契约进入 RECOVERY_REQUIRED，保留证据并人工现场核验，不盲目重跑。自动跨节点修复不属于初版要求。owner 可用 task 范围 cancel 发起核验收尾：无 create/unknown 命令历史才释放 claims；create 记录存在但无副作用标记（`effects/<digest([owner,command_id])>.json`）时同样视为未产生副作用、释放 claims；有副作用标记则保持 RECOVERY_REQUIRED。
 
 ## 五技能安装
 

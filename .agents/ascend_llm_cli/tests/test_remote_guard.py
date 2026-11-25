@@ -3,23 +3,56 @@ import tempfile
 import unittest
 from deploy_eval_v2.remote_guard import HostGuard, require_owned_container, exclusive
 from deploy_eval_v2.protocol import ProtocolError
+from deploy_eval_v2.compiler import digest
+from deploy_eval_v2.durable import atomic_json
 
 
 class RemoteGuardTests(unittest.TestCase):
-    def test_precreate_cleanup_requires_absence_of_durable_effects(self):
+    def test_holds_reports_only_own_live_claims(self):
+        with tempfile.TemporaryDirectory() as folder:
+            guard=HostGuard(folder,'t','a'*64)
+            guard.claim(['npu:5'])
+            self.assertTrue(guard.holds(['npu:5','npu:6']))
+            self.assertFalse(guard.holds(['npu:6']))
+            guard.release_claims(['npu:5'],resources_verified_absent=True)
+            self.assertFalse(guard.holds(['npu:5']))
+
+    def test_precreate_cleanup_uses_durable_effect_marker(self):
         with tempfile.TemporaryDirectory() as folder:
             guard=HostGuard(folder,'t','a'*64)
             guard.claim(['npu:0'])
             self.assertTrue(guard.release_unstarted(['npu:0'])['claims_released'])
             guard.claim(['npu:0'])
-            def lost():
+            def remapped():
+                raise ProtocolError('RECOVERY_REQUIRED: container devices remapped')
+            with self.assertRaises(ProtocolError):
+                guard.command('create1',{'kind':'create'},remapped)
+            # Read-only preflight rejected before any side effect: safe to unlock.
+            self.assertFalse(guard.effect_started('create1'))
+            self.assertTrue(guard.release_unstarted(['npu:0'])['claims_released'])
+            guard.claim(['npu:0'])
+            def started_then_lost():
+                guard.mark_effect_started('create2')
                 raise OSError('create outcome lost')
             with self.assertRaises(OSError):
-                guard.command('create1',{'kind':'create'},lost)
+                guard.command('create2',{'kind':'create'},started_then_lost)
+            # A recorded side effect keeps the host locked for inventory review.
             with self.assertRaisesRegex(ProtocolError,'prior resource effect'):
                 guard.release_unstarted(['npu:0'])
             with self.assertRaisesRegex(ProtocolError,'RESOURCE_BUSY'):
                 HostGuard(folder,'other','b'*64).claim(['npu:0'])
+
+    def test_legacy_create_record_without_marker_stays_locked(self):
+        with tempfile.TemporaryDirectory() as folder:
+            guard=HostGuard(folder,'t','a'*64)
+            guard.claim(['npu:0'])
+            key=digest(dict(owner=guard.owner,command_id='old'))
+            atomic_json(guard.root/'commands'/(key+'.json'),
+                        dict(owner=guard.owner,command_id='old',payload_sha256='x',
+                             effect_kind='create',status='ACCEPTED'))
+            with self.assertRaisesRegex(ProtocolError,'prior resource effect'):
+                guard.release_unstarted(['npu:0'])
+
     def test_cross_task_claims_survive_reconstruction(self):
         with tempfile.TemporaryDirectory() as folder:
             first = HostGuard(folder, 'a', 'a'*64)

@@ -12,7 +12,7 @@
 | `launch.kv_transfer_config` | `kv_role` 按角色、`kv_port` 取 `ports.kv`、`engine_id` = `deployment.id-instance.id` |
 | `launch.program/adapter/preserve_reference/checks` | 按角色固定 |
 | `bindings.nodes.<n>.deployments[].network/ports` | `nodes.network` + `instances[].ports` + 派生 `hccl` |
-| `bindings.testers.<id>` | `evaluation.tester` 逐字段投影；同机缺省：`host`←`nodes[control_node].host`、`work_root`←`allowed_root`、`model_path`←`model_paths[model.id]`、`container`←`nodes[control_node].container`、`container_work_root`←`<container_work_root>/<task.id>-tester`、`host_python`←`/usr/bin/python3`。缺省只用于补齐，**补齐后的值必须显式写回 top_input**（校验不替你读缺省）；显式值优先于派生值；`container_work_root` 派生值按任务隔离，不复用固定目录 |
+| `bindings.testers.<id>` | `evaluation.tester` 逐字段投影；同机缺省：`host`←`nodes[control_node].host`、`work_root`←`allowed_root`、`model_path`←`model_paths[model.id]`、`container`←`nodes[control_node].container`、`container_work_root`←`<container_work_root>/<task.id>-tester`、`host_python`←按节点 `python` 同序探测出的已核验解释器（≥3.11 且能 import jsonschema）。缺省只用于补齐，**补齐后的值必须显式写回 top_input**（校验不替你读缺省）；显式值优先于派生值；`container_work_root` 派生值按任务隔离，不复用固定目录 |
 | 容器网络模式与 NPU 可见性 | existing 的 `self` 节点在容器内核对网络与 `/dev/davinciN`；其余 existing 节点经 SSH + `docker inspect` 核验 `NetworkMode` 与 Devices；owned 由 CLI 创建，不预检宿主 IP |
 | 节点运行根 `node_root` | 约定为 `allowed_root/task.id`；CLI 不推导，必须在 `control.json` 的 tasks 条目（字段 `root`）与定位该任务的 `nodes` 条目中显式写入同一值；existing 模式下容器运行根为 `container_work_root/task.id` |
 | 交付根 `task_root` | 约定为 `deliverables.local_dir/task.id`，只存在于控制机；显式写入 `control.json` 的 `task_root`，末段必须等于 `task.id`，且不得等于或位于该任务的 `node_root` 内 |
@@ -30,7 +30,7 @@
 | `nodes.<id>.guard_root`（未给出时） | CLI 默认 `/var/lib/deploy-eval-v2/guard`；不得落在交付根、节点运行根或 `allowed_root` 内 |
 | `task.on_idle`（未给出时） | `keep_service`；`deploy_only` 只允许该值，`deploy_and_eval` 采用缺省须在 `limitations` 声明 |
 | `nodes.<id>.authorization`（未给出时） | `{preempt_other_processes:false, create_work_root:false}`；只约束节点运行根之外的根，任务自身运行根与交付根照常创建 |
-| `nodes.<id>.python`（未给出时） | `/usr/bin/python3`；先用它核验 `from jsonschema import Draft202012Validator` 成功再写回，失败按 validation.md 换已核验解释器 |
+| `nodes.<id>.python`（未给出时） | 按顺序探测 `command -v python3` → `/usr/bin/python3` → 现场已核验 venv，取第一个满足 Python>=3.11 且 `from jsonschema import Draft202012Validator` 成功的解释器并写回 top_input；全部候选都不满足才回报，不自行安装依赖 |
 | `nodes.<id>.container_work_root`（未给出时） | 容器内 `allowed_root` 的可写投影，唯一候选才采用、否则停止；取值写回 top_input，bindings 再逐字段投影 |
 | `evaluation.dataset.split/scope`（未给出时） | 派单只给数据集名或路径时派生：`gpqa_diamond` → `{id:"gpqa",split:"diamond",scope:"full"}`，`gsm8k` → `{id:"gsm8k",split:"test",scope:"full"}`；“全量” → `full`；不得缩小 `scope`；子集限条数用 case `num_prompts` 表达，不改变 `scope` |
 | `bindings.nodes.<n>.container_work_root`（未给出时） | 容器内 `allowed_root` 的可写投影；唯一候选才采用，否则停止；目录允许不存在 |

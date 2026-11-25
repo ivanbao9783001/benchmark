@@ -17,6 +17,10 @@ Duplicate JSON keys and non-finite numbers fail validation. Phase deadline and
 cancellation are checked while reading. Symlink/out-of-operation detail paths are
 rejected. These limits are execution safeguards, not changes to requested load.
 
+Per-row input/output token counts are aggregated as count/min/max/total. They are
+reported beside the configured target and never gate pass/fail; a mismatch between
+the synthetic target and the observed length is diagnostic only.
+
 Passing native requests does not establish a valid steady-state window or server
 metric agreement. Those separate checks are implemented in performance_evidence.py
 and result-validation.md; the result keeps performance_validity=UNVERIFIED until

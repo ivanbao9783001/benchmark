@@ -61,6 +61,8 @@ class SelfContainerNode(ExistingContainerNode):
             self._check_device_map(command_id, group, deadline, cancelled)
             self.inspect_running(self.container['id'], deadline, cancelled)
             self._probe_ports(self.container['id'], group['ports'], deadline)
+            # Everything above is read-only; mark before the first mutation.
+            self.guard.mark_effect_started(command_id)
             for directory in ('scripts', 'logs'):
                 Path(group['container_root'], directory).mkdir(parents=True, exist_ok=True)
             # Without docker the running image cannot be re-derived, so the

@@ -231,3 +231,18 @@ class OwnedExecutor:
             data['error_code']='CLEANUP_UNVERIFIED'
         return ('operation.cancelled' if verified else 'operation.failed',
                 'CANCELLED' if verified else 'RECOVERY_REQUIRED',data)
+
+    def cleanup_settled(self):
+        """True when this owner no longer holds any claim for the frozen groups."""
+        try:
+            groups=self.inputs()['compiled.json']['topology']['groups']
+        except Exception:
+            return False
+        for name,node in self.nodes.items():
+            keys=[k for k,g in groups.items() if g['node']==name]
+            resources=sorted({r for k in keys for r in
+                ['npu:'+str(n) for n in groups[k]['npu_ids']]+['tcp:'+str(p) for p in groups[k]['ports']]})
+            checker=getattr(node.guard,'holds',None)
+            if checker is None or checker(resources):
+                return False
+        return True

@@ -21,7 +21,7 @@
 | `nodes.<id>.container.self` | `true`（单机唯一节点；表示当前就在该容器内） |
 | `nodes.<id>.network` | `{ip, interface}` |
 | `deployment.instances` | 1 个 `mixed`，`ports` 只写 `http` |
-| `evaluation.tester` | `host`、`work_root`、`python`、`aisbench`、`model_path`、`machine_id`、`datasets.synthetic` 必填；`machine_id` 在容器内运行 `deploy-eval-v2 identity` 取证；`host_python` 建议显式给出（容器内缺省 `/usr/bin/python3`）；容器内测试再加 `container` 与 `container_work_root` |
+| `evaluation.tester` | `host`、`work_root`、`python`、`aisbench`、`model_path`、`machine_id`、`datasets.synthetic` 必填；`machine_id` 在容器内运行 `deploy-eval-v2 identity` 取证；`host_python` 建议显式给出（容器内缺省按探测顺序取已核验解释器）；容器内测试再加 `container` 与 `container_work_root` |
 | 不写 | `evaluation.dataset`、`evaluation.service`、`deployment.image` |
 
 网络取证：容器内可能没有 `ip`/`ss`。用 `hostname -I` 与 `ls /sys/class/net` 列出地址和接口，再用 `cat /sys/class/net/<if>/address` 或 `ifconfig <if>` 交叉确认；`network.ip` 取与派单 `host` 同一张网卡的地址，不能选 `docker0`、`calico` 或其它物理口。

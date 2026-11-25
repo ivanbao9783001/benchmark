@@ -77,8 +77,10 @@ def validate_eval_bindings(plan, bindings):
     """Validate references and Linux paths, without probing the bound machine."""
     normalize_external_plan(plan)
     schema = load_json(Path(__file__).parent/'schemas/eval-bindings.schema.json')
-    if next(Draft202012Validator(schema).iter_errors(bindings), None) is not None:
-        raise ProtocolError('INVALID_INPUT: eval bindings schema')
+    error = next(Draft202012Validator(schema).iter_errors(bindings), None)
+    if error is not None:
+        raise ProtocolError('INVALID_INPUT: eval bindings schema at '+
+                            error.json_path+': '+error.message)
     if bindings['task_id'] != plan['task_id']:
         raise ProtocolError('INVALID_INPUT: binding task identity mismatch')
     if plan['test_binding'] not in bindings['testers']:

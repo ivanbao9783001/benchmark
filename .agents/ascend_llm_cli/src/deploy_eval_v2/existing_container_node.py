@@ -152,6 +152,9 @@ class ExistingContainerNode(DockerNode):
             self._check_device_map(command_id, group, deadline, cancelled)
             self.inspect_running(self.container['id'], deadline, cancelled)
             self._probe_ports(self.container['id'], group['ports'], deadline)
+            # Everything above is read-only; mark before the first mutation so
+            # a pre-create rejection can release claims safely.
+            self.guard.mark_effect_started(command_id)
             # The borrowed container needs its own script/log directories.
             self.call(['docker', 'exec', self.container['id'], 'mkdir', '-p',
                        group['container_root']+'/scripts', group['container_root']+'/logs'],

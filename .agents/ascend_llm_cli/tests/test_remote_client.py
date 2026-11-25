@@ -1,6 +1,8 @@
 import io
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock,patch
 from deploy_eval_v2.remote_client import relay,main
 from deploy_eval_v2.protocol import ProtocolError,envelope,encode
@@ -8,6 +10,91 @@ from test_cli import Output
 
 
 class RemoteClientTests(unittest.TestCase):
+    def task_root(self, folder, snapshot, events):
+        from deploy_eval_v2.durable import atomic_json
+        root=Path(folder)
+        atomic_json(root/'.runtime/identity.json',dict(task_id='t',node_root=str(root)))
+        atomic_json(root/'.runtime/process.json',dict(pid=999999,start_ticks='1',boot_id='b',session=999999))
+        if snapshot is not None:
+            atomic_json(root/'state.json',snapshot)
+        (root/'task.jsonl').write_bytes(b''.join(encode(event)+b'\n' for event in events))
+        return root
+
+    def test_offline_status_reads_persisted_snapshot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=self.task_root(folder,
+                dict(protocol_version='1.0',task_id='t',task_version=3,state='CANCELLED',
+                     operation_id=None,service_id=None,task_cancelled=True,next_cursor=3),
+                [dict(task_id='t',seq=1,type='task.initialized',status='EXTERNAL_READY'),
+                 dict(task_id='t',seq=2,type='operation.failed',status='FAILED'),
+                 dict(task_id='t',seq=3,type='operation.cancelled',status='CANCELLED')])
+            factory=MagicMock(side_effect=ConnectionRefusedError())
+            with patch('deploy_eval_v2.launcher.process_identity',side_effect=FileNotFoundError()):
+                response=relay(root,dict(protocol_version='1.0',task_id='t',kind='get-status'),
+                               socket_factory=factory)
+            self.assertEqual(response['task_state'],'CANCELLED')
+            self.assertEqual(response['next_cursor'],3)
+            self.assertIs(response['offline'],True)
+            self.assertEqual(response['source'],'state.json')
+            self.assertIs(response['stale'],False)
+            self.assertEqual(response['runtime'],'STOPPED')
+
+    def test_stale_snapshot_defers_to_terminal_journal_tail(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=self.task_root(folder,
+                dict(protocol_version='1.0',task_id='t',task_version=2,state='FAILED',
+                     operation_id='op',service_id=None,task_cancelled=False,next_cursor=2),
+                [dict(task_id='t',seq=1,type='task.initialized',status='EXTERNAL_READY'),
+                 dict(task_id='t',seq=2,type='operation.failed',status='FAILED'),
+                 dict(task_id='t',seq=3,type='operation.cancelled',status='CANCELLED')])
+            factory=MagicMock(side_effect=ConnectionRefusedError())
+            response=relay(root,dict(protocol_version='1.0',task_id='t',kind='get-status'),
+                           socket_factory=factory)
+            self.assertIs(response['stale'],True)
+            self.assertEqual(response['journal_next_cursor'],3)
+            self.assertEqual(response['last_event_type'],'operation.cancelled')
+            self.assertEqual(response['task_state'],'CANCELLED')
+            self.assertIsNone(response['operation_id'])
+
+    def test_offline_status_ignores_diagnostic_records(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=self.task_root(folder,
+                dict(protocol_version='1.0',task_id='t',task_version=3,state='CANCELLED',
+                     operation_id=None,service_id=None,task_cancelled=True,next_cursor=3),
+                [dict(task_id='t',seq=1,type='task.initialized',status='EXTERNAL_READY'),
+                 dict(record_type='diagnostic',event='process.start',message='x'),
+                 dict(task_id='t',seq=2,type='operation.failed',status='FAILED'),
+                 dict(task_id='t',seq=3,type='operation.cancelled',status='CANCELLED'),
+                 dict(record_type='diagnostic',event='process.exit',message='y')])
+            factory=MagicMock(side_effect=ConnectionRefusedError())
+            response=relay(root,dict(protocol_version='1.0',task_id='t',kind='get-status'),
+                           socket_factory=factory)
+            self.assertIs(response['stale'],False)
+            self.assertEqual(response['task_state'],'CANCELLED')
+
+    def test_offline_status_stays_unknown_without_proof(self):
+        with tempfile.TemporaryDirectory() as folder:
+            factory=MagicMock(side_effect=ConnectionRefusedError())
+            request=dict(protocol_version='1.0',task_id='t',kind='get-status')
+            # No durable identity: another task's files must never be reported.
+            with self.assertRaisesRegex(ProtocolError,'UNKNOWN_OUTCOME'):
+                relay(Path(folder),request,socket_factory=factory)
+            state=dict(protocol_version='1.0',task_id='t',task_version=1,state='READY',
+                       operation_id=None,service_id=None,task_cancelled=False,next_cursor=1)
+            events=[dict(task_id='t',seq=1,type='deployment.ready',status='READY')]
+            # Identity without a snapshot.
+            root=self.task_root(folder,None,events)
+            with self.assertRaisesRegex(ProtocolError,'UNKNOWN_OUTCOME'):
+                relay(root,request,socket_factory=factory)
+            # Snapshot for another task.
+            root=self.task_root(folder,dict(state,task_id='other'),events)
+            with self.assertRaisesRegex(ProtocolError,'UNKNOWN_OUTCOME'):
+                relay(root,request,socket_factory=factory)
+            # Snapshot ahead of the journal: evidence cannot be reconciled.
+            root=self.task_root(folder,dict(state,next_cursor=5),events)
+            with self.assertRaisesRegex(ProtocolError,'UNKNOWN_OUTCOME'):
+                relay(root,request,socket_factory=factory)
+
     def test_stopped_task_artifacts_remain_readable_with_identity(self):
         import tempfile
         from pathlib import Path

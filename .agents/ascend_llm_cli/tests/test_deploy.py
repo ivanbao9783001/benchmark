@@ -28,6 +28,8 @@ class DeployOrderingTests(unittest.TestCase):
             def create(*args, tag=name+'.create',cid=str(index+1)*64):
                 calls.append(tag)
                 if tag==fail:
+                    # Simulate a failure after the first mutating call.
+                    node.guard.mark_effect_started(args[0])
                     raise ProtocolError('UNKNOWN_OUTCOME')
                 return dict(container_id=cid)
             node.create.side_effect=create

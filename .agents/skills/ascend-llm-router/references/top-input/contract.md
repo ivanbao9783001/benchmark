@@ -22,7 +22,7 @@
 | `nodes.<id>` | 授权 | 恒填 | 键名即 bindings 节点标识，`^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`；`eval_only` 时该节点即测试机 |
 | `nodes.<id>.host` | 授权 | 恒填 | 非 self 节点填 SSH 目标（可含 `user@`）；`container.self=true` 的节点填本机 hostname 或 IP（不含 `user@` 与端口），只作节点登记，不参与本地执行、不做连通性校验；self 节点不得编造 SSH 目标 |
 | `nodes.<id>.allowed_root` | 授权 | 恒填 | 可写根，只承载该节点的运行根 `node_root = allowed_root/task.id`；同时投影为 `control.json` 的 `allowed_root` 与 bindings 的 `work_dir`。它不是交付目录，交付根见 `deliverables.local_dir` |
-| `nodes.<id>.python` | 授权 | 含部署的动作 | 该节点发布/启动用解释器；派单方未给时取 `/usr/bin/python3`，核验后写回 top_input。必须能用它成功 `from jsonschema import Draft202012Validator`（jsonschema>=4），否则远端 runtime 无法启动；不满足时改用现场已核验的 venv。远端运维通道固定用 `/usr/bin/python3`，不可替换 |
+| `nodes.<id>.python` | 授权 | 含部署的动作 | 该节点发布/启动用解释器；派单方未给时按顺序探测并核验 `command -v python3` → `/usr/bin/python3` → 现场已核验的 venv，取第一个同时满足 Python>=3.11 且能成功 `from jsonschema import Draft202012Validator`（jsonschema>=4）的解释器，核验后写回 top_input；全部候选都不满足才向派单方回报，不自行安装依赖。远端运维通道固定用 `/usr/bin/python3`，不可替换 |
 | `nodes.<id>.guard_root` | 事实 | 含部署的动作 | 每节点独立；投影为 bindings 的 `guard_root`；派单方未给时取 CLI 默认 `/var/lib/deploy-eval-v2/guard` 写回 top_input，不得落在交付根、节点运行根或 `allowed_root` 内；`eval_only`/`release_only` 不使用。阻断时证据只写 `<guard_root>/work/<task.id>-preflight/`，不创建任何交付根或运行根 |
 | `nodes.<id>.model_paths` | 事实 | 含部署的动作 | 模型 id → 该节点路径；**按节点**给，PD 两侧可以不同；existing 模式下填容器内可见路径 |
 | `nodes.<id>.network` | 事实 | `existing_container` 必填；PD 跨机两侧须互通 | `{ip, interface}`；existing 模式下 HCCL 与监听地址依赖它，派单方未给时由执行方现场探测并留证（多网卡按对端可达性选择，无法确定则停），不得留 `null` 或写推测值；owned 无容器可探测，必须由派单方给出 |

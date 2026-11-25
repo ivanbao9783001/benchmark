@@ -7,7 +7,9 @@ from deploy_eval_v2.release import release_known
 class ReviewRegressionTests(unittest.TestCase):
     def test_measured_lengths_and_minimum_prefix(self):
         case = dict(input_tokens=100, formal_requests=2, shared_prefix_ratio=0.8)
-        for exact, common, valid in [(False, 0, False), (False, 80, False),
+        # Synthetic lengths never reproduce the target exactly; exact_match is
+        # diagnostic and only real prefix coverage decides.
+        for exact, common, valid in [(False, 0, False), (False, 80, True),
                                      (True, 79, False), (True, 80, True)]:
             observation = dict(status='MEASURED', exact_input_lengths=exact, common_prefix_tokens=common)
             self.assertEqual(matches_prefix_target(observation, case), valid)

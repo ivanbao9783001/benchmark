@@ -82,19 +82,32 @@ def stop_installed(root,request):
     if identity['task_id']!=request['task_id'] or identity['nonce']!=request['nonce']:
         raise ProtocolError('REQUEST_CONFLICT: stop identity')
     status=relay(root,dict(protocol_version='1.0',task_id=request['task_id'],kind='get-status'))
-    if status.get('task_state') not in ('NEW','RELEASED','CANCELLED','FAILED'):
+    if status.get('task_state') not in ('NEW','RELEASED','CANCELLED','FAILED','RECOVERY_REQUIRED'):
         raise ProtocolError('RESOURCE_BUSY: release or cancel and verify resources before stopping runtime')
     expected=load_json(root/'.runtime/process.json')
-    if process_identity(expected['pid'])!=expected:
+    if not isinstance(expected,dict) or type(expected.get('pid')) is not int or expected['pid']<=0:
+        raise ProtocolError('RECOVERY_REQUIRED: process receipt invalid')
+    try:
+        current=process_identity(expected['pid'])
+    except (FileNotFoundError,ProcessLookupError):
+        # Repeating a stop after the recorded process exited is idempotent:
+        # it observes an already-finished shutdown and performs no new effect.
+        response=envelope(request['task_id'],status.get('next_cursor',0))
+        response.update(runtime_stopped=True,already_stopped=True,process=expected)
+        return response
+    if current!=expected:
         raise ProtocolError('RECOVERY_REQUIRED: process identity changed')
     import socket,json
-    with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as client:
-        client.settimeout(5)
-        client.connect(str(root/'.runtime/control.sock'))
-        packet=dict(protocol_version='1.0',task_id=request['task_id'],kind='stop-runtime',nonce=request['nonce'])
-        client.sendall(json.dumps(packet).encode()+b'\n')
-        with client.makefile('rb') as stream:
-            reply=json.loads(stream.readline(8193))
+    try:
+        with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as client:
+            client.settimeout(5)
+            client.connect(str(root/'.runtime/control.sock'))
+            packet=dict(protocol_version='1.0',task_id=request['task_id'],kind='stop-runtime',nonce=request['nonce'])
+            client.sendall(json.dumps(packet).encode()+b'\n')
+            with client.makefile('rb') as stream:
+                reply=json.loads(stream.readline(8193))
+    except (OSError,ValueError) as error:
+        raise ProtocolError('UNKNOWN_OUTCOME: runtime stop not acknowledged') from error
     if reply.get('pid')!=expected['pid'] or reply.get('stop_accepted') is not True:
         raise ProtocolError('RECOVERY_REQUIRED: stop not accepted')
     deadline=time.monotonic()+5

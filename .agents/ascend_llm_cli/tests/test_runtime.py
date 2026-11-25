@@ -26,16 +26,17 @@ def finish(runtime):
 
 class RuntimeTests(unittest.TestCase):
     def test_failed_runtime_stop_requires_verified_cleanup_evidence(self):
-        for cleanup in ('VERIFIED','UNVERIFIED'):
-            with self.subTest(cleanup=cleanup), tempfile.TemporaryDirectory() as root:
-                def executor(*args):
-                    return 'operation.failed','FAILED',dict(cleanup_status=cleanup,error_code='DEPLOYMENT_FAILED')
-                runtime=Runtime(root,'t',executor)
-                runtime.submit(command(plan_ref='frozen'))
-                finish(runtime)
-                self.assertEqual(runtime.can_stop(),cleanup=='VERIFIED')
-                runtime.active='unknown-operation'
-                self.assertFalse(runtime.can_stop())
+        for status in ('FAILED','RECOVERY_REQUIRED'):
+            for cleanup in ('VERIFIED','UNVERIFIED'):
+                with self.subTest(status=status, cleanup=cleanup), tempfile.TemporaryDirectory() as root:
+                    def executor(*args):
+                        return 'operation.failed',status,dict(cleanup_status=cleanup,error_code='DEPLOYMENT_FAILED')
+                    runtime=Runtime(root,'t',executor)
+                    runtime.submit(command(plan_ref='frozen'))
+                    finish(runtime)
+                    self.assertEqual(runtime.can_stop(),cleanup=='VERIFIED')
+                    runtime.active='unknown-operation'
+                    self.assertFalse(runtime.can_stop())
 
     def test_cancel_accepted_before_success_boundary_runs_cleanup(self):
         entered=threading.Event();complete=threading.Event();cleaning=threading.Event();cleaned=threading.Event()
@@ -64,6 +65,50 @@ class RuntimeTests(unittest.TestCase):
             cleaned.set();finish(runtime)
             self.assertEqual(runtime.state,'CANCELLED')
             self.assertEqual(runtime.journal.events[-1]['type'],'operation.cancelled')
+
+    def test_idle_cancel_reuses_verified_cleanup(self):
+        calls=[]
+        class Executor:
+            def __call__(self,*args):
+                return 'operation.failed','FAILED',dict(cleanup_status='VERIFIED',error_code='DEPLOYMENT_FAILED')
+            def cleanup_settled(self):
+                return True
+            def cancel_idle(self,operation):
+                calls.append(operation)
+                return 'operation.failed','RECOVERY_REQUIRED',dict(
+                    cleanup_status='UNVERIFIED',error_code='CLEANUP_UNVERIFIED')
+        with tempfile.TemporaryDirectory() as root:
+            runtime=Runtime(root,'t',Executor())
+            runtime.submit(command(plan_ref='frozen'));finish(runtime)
+            prior_seq=runtime.journal.events[-1]['seq']
+            runtime.submit(command('cancel',runtime.version,'c1',scope='task'));finish(runtime)
+            self.assertEqual(calls,[])
+            event=runtime.journal.events[-1]
+            self.assertEqual((event['type'],event['status'],event['data']['cleanup_status']),
+                             ('operation.cancelled','CANCELLED','VERIFIED'))
+            self.assertTrue(event['data']['claims_released'])
+            self.assertEqual(event['data']['reused_from_seq'],prior_seq)
+            self.assertEqual(runtime.state,'CANCELLED')
+            self.assertTrue(runtime.can_stop())
+
+    def test_idle_cancel_rechecks_when_claim_remains(self):
+        calls=[]
+        class Executor:
+            def __call__(self,*args):
+                return 'operation.failed','FAILED',dict(cleanup_status='VERIFIED',error_code='DEPLOYMENT_FAILED')
+            def cleanup_settled(self):
+                return False
+            def cancel_idle(self,operation):
+                calls.append(operation)
+                return 'operation.cancelled','CANCELLED',dict(cleanup_status='VERIFIED')
+        with tempfile.TemporaryDirectory() as root:
+            runtime=Runtime(root,'t',Executor())
+            runtime.submit(command(plan_ref='frozen'));finish(runtime)
+            runtime.submit(command('cancel',runtime.version,'c1',scope='task'));finish(runtime)
+            self.assertEqual(len(calls),1)
+            event=runtime.journal.events[-1]
+            self.assertEqual((event['type'],event['status']),('operation.cancelled','CANCELLED'))
+            self.assertNotIn('reused_from_seq',event['data'])
 
     def test_unhandled_executor_error_preserves_evidence_and_requires_recovery(self):
         def fail(*args):

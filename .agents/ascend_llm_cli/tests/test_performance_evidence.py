@@ -47,7 +47,7 @@ class PerformanceEvidenceTests(unittest.TestCase):
               'Success Requests':18 if steady else 20,'Failed Requests':0,'Max Concurrency':2,
               'Request Throughput':'2.1176 req/s' if steady else '1.9417 req/s'}.items()}
         summary=path.with_name('dataset.json');summary.write_text(json.dumps(data))
-        case=dict(formal_requests=20,concurrency=2,steady_state=steady)
+        case=dict(formal_requests=20,concurrency=2,steady_state=steady,input_tokens=12)
         native=validate_native_result(root,case)
         return root,path,summary,data,case,native
 
@@ -58,6 +58,10 @@ class PerformanceEvidenceTests(unittest.TestCase):
                 report=summarize(root,case,native)
                 self.assertEqual(report['status'],'VERIFIED')
                 self.assertEqual(native['request_groups'][0]['observed_tokens']['input_tokens']['total'],200)
+                # The target never gates; the measured spread is reported beside it.
+                self.assertEqual(report['groups'][0]['input_tokens'],
+                                 dict(target=12,observed=dict(scope='formal_requests',count=20,
+                                                              min=10,max=10,mean=10)))
 
     def test_db_time_points_restore_steady_window(self):
         with tempfile.TemporaryDirectory() as folder:

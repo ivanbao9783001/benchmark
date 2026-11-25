@@ -10,6 +10,10 @@ from .protocol import ProtocolError, NON_BOUNDARY
 from .durable import atomic_json
 
 
+TERMINALS = ('deployment.ready','evaluation.completed','operation.failed','operation.cancelled',
+             'release.completed','release.unverified','task.expired','runtime.recovery_required')
+
+
 class Runtime:
     def __init__(self, directory, task_id, executor, *, repair_tail=False):
         self.journal = Journal(directory, task_id, repair_tail=repair_tail)
@@ -49,7 +53,7 @@ class Runtime:
             return False
         if self.state in ('NEW', 'RELEASED', 'CANCELLED'):
             return True
-        if self.state == 'FAILED' and self.journal.events:
+        if self.state in ('FAILED', 'RECOVERY_REQUIRED') and self.journal.events:
             event = self.journal.events[-1]
             return event['type'] == 'operation.failed' and event['data'].get('cleanup_status') == 'VERIFIED'
         return False
@@ -237,7 +241,32 @@ class Runtime:
                 threading.Thread(target=self._execute, args=(dict(command), operation), daemon=True).start()
             return dict(data)
 
+    def _reusable_cleanup(self):
+        """Return the last terminal event when cleanup was already verified and settled."""
+        with self.lock:
+            prior=next((event for event in reversed(self.journal.events)
+                        if event['type'] in TERMINALS),None)
+        if prior is None or prior.get('data',{}).get('cleanup_status')!='VERIFIED':
+            return None
+        # A verified verdict is reused only while the owner truly holds no claim.
+        checker=getattr(self.executor,'cleanup_settled',None)
+        if checker is not None:
+            try:
+                if not checker():
+                    return None
+            except Exception:
+                return None
+        return prior
+
     def _cancel_idle(self,operation):
+        prior=self._reusable_cleanup()
+        if prior is not None:
+            with self.lock:
+                self._emit_terminal_safely('operation.cancelled',operation,'CANCELLED',dict(
+                    cleanup_status='VERIFIED',
+                    claims_released=bool(prior['data'].get('claims_released',True)),
+                    reused_from_seq=prior['seq']))
+            return
         handler=getattr(self.executor,'cancel_idle',None)
         try:
             if handler:
