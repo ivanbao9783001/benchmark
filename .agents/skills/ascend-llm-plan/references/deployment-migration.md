@@ -43,11 +43,11 @@ proxy实例不占设备。launch.proxy_program_key指向nodes[slot].paths中的�
 
 | 原始命令参数 | 结构化位置（不要重复放launch.args） |
 | --- | --- |
-| --host | bindings.nodes[slot].deployments[deployment.id].network.ip（记录为 endpoint；编译监听固定为 `0.0.0.0`，使同容器回环 `127.0.0.1` 与节点 IP 均可访问；HCCL/VLLM_HOST_IP 仍用 network.ip） |
+| --host | bindings.nodes[slot].deployments[deployment.id].network.ip（记录为 endpoint；编译时模型与 proxy 一律监听 `0.0.0.0`，使同容器回环 `127.0.0.1` 与节点 IP 均可访问；对外地址、peer 地址与健康探测仍用 network.ip；HCCL/VLLM_HOST_IP 仍用 network.ip） |
 | --port | bindings.nodes[slot].deployments[deployment.id].ports[instance.id].http |
 | --served-model-name | deployment.model.served_name，须保留参考实际名称 |
 | --kv-transfer-config | instance.launch.kv_transfer_config，保留完整JSON |
 
 以上四个键在launch.args中出现即拒绝冻结。data-parallel-rpc-port/data-parallel-address可以省略，由rpc绑定生成；若显式保留则必须与绑定一致。device-ids或ASCEND_RT_VISIBLE_DEVICES/ASCEND_VISIBLE_DEVICES如果参考显式给出，需要与placement.devices一致；否则编译器按placement补设备选择，不改DP/TP/PCP规模。容器基线环境里的 `ASCEND_RT_VISIBLE_DEVICES` 不是本次授权：与 `placement.devices` 不一致时，以派单授权为准，并在本次 launch 环境中覆盖，不得复用基线值。preserve_reference会保留其余环境及参数，不取消上述结构化字段的一致性管理。
 
-完整KV JSON中的kv_port必须匹配本实例ports.kv，kv_role和connector必须匹配connections.kv_transfer；engine_id在launch.engine_id与完整KV JSON之间必须保留一致，且遵循参考。不要将JSON参数同时放在launch.args和专用launch.kv_transfer_config中。所有受管理参数迁移都需在审阅差异中记录原参考值、目标字段和值及编译结果。
+完整KV JSON中的kv_port必须匹配本实例ports.kv，kv_role和connector必须匹配connections.kv_transfer；engine_id在launch.engine_id与完整KV JSON之间必须保留一致，且遵循参考。不要将JSON参数同时放在launch.args和专用launch.kv_transfer_config中。所有受管理参数迁移都需在审阅差异中记录原参考值、目标字段和值及编译结果。编译器只合成与具体 connector 无关的字段，其中 `kv_connector_extra_config` 按实例规模写入 prefill/decode 的 dp/tp，属预期行为；其余 connector 私有键必须来自确认过的参考启动配置或 bootstrap，CLI 不注入、不猜测，确认不了记 `UNVERIFIED`。

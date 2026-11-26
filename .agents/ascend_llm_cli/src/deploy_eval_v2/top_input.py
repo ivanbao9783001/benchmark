@@ -143,6 +143,8 @@ def validate(data):
             continue
         has_existing = True
         is_self = isinstance(container, dict) and container.get("self") is True
+        if isinstance(container, dict) and "self" in container and container["self"] is not True:
+            _issue(issues, "SELF_VALUE", base + ".container.self", "只能写 true")
         required = {"id"} if is_self else {"id", "image"}
         if (not isinstance(container, dict)
                 or not required <= set(container) <= {"id", "image", "self", "device_id_map"}):
@@ -171,8 +173,6 @@ def validate(data):
         if not node.get("network"):
             _issue(issues, "NETWORK_REQUIRED", base + ".network", "借用容器必须给 network")
         if "self" in container:
-            if container["self"] is not True:
-                _issue(issues, "SELF_VALUE", base + ".container.self", "只能写 true")
             if node_id != control:
                 _issue(issues, "SELF_CONTROL_NODE", base + ".container.self", "只有控制节点可以 self")
             self_nodes.append(node_id)
@@ -181,6 +181,12 @@ def validate(data):
     elif has_existing and not self_nodes:
         _issue(issues, "SELF_REQUIRED", "nodes",
                "existing 模式必须有一个 container.self=true 表示当前所在容器")
+    if has_existing:
+        missing = [node_id for node_id, node in nodes.items()
+                   if isinstance(node, dict) and not isinstance(node.get("container"), dict)]
+        if missing:
+            _issue(issues, "MODE_MIXED", "nodes",
+                   "existing 场景所有节点都必须写 container；不得与 owned 混用：" + ",".join(missing))
 
     hosts = [node.get("host", "").split("@")[-1] for node in nodes.values() if isinstance(node, dict)]
     if len(hosts) != len(set(hosts)):
@@ -358,8 +364,6 @@ def _validate_evaluation(data, task, nodes, issues):
     if not isinstance(tester.get("machine_id"), str) or not re.fullmatch(r"[a-f0-9]{32}", tester["machine_id"]):
         _issue(issues, "TESTER_MACHINE_ID", "evaluation.tester.machine_id",
                "必须是 32 位小写十六进制机器码，现场取证后写回")
-    if "host_python" in tester and not _path(tester["host_python"]):
-        _issue(issues, "TESTER_FIELD", "evaluation.tester.host_python", "必须是 POSIX 绝对路径")
     datasets = tester.get("datasets")
     if not isinstance(datasets, dict) or not datasets:
         _issue(issues, "TESTER_DATASETS", "evaluation.tester.datasets", "至少一个数据集")
@@ -378,6 +382,25 @@ def _validate_evaluation(data, task, nodes, issues):
             _issue(issues, "TESTER_WORK_ROOT", "evaluation.tester.container_work_root", "必须是 POSIX 绝对路径")
     elif "container_work_root" in tester:
         _issue(issues, "TESTER_CONTAINER", "evaluation.tester.container_work_root", "缺少 container")
+    existing = any(isinstance(node.get("container"), dict)
+                   for node in nodes.values() if isinstance(node, dict))
+    if existing and container is None:
+        _issue(issues, "TESTER_CONTAINER_REQUIRED", "evaluation.tester.container",
+               "existing 场景 tester 必须在容器内闭环，必须给 container 与 container_work_root")
+    elif not existing and container is not None:
+        _issue(issues, "TESTER_CONTAINER_FORBIDDEN", "evaluation.tester.container",
+               "owned 场景 tester 在宿主执行，不允许 container")
+    if existing and isinstance(container, dict):
+        # One container per host: a tester on a node host must reuse that node's
+        # container (the control node is just the usual host-matching case).
+        same_host = [node for node in nodes.values()
+                     if isinstance(node, dict) and node.get("host") == tester.get("host")]
+        if len(same_host) == 1:
+            node_container = same_host[0].get("container")
+            if (isinstance(node_container, dict)
+                    and container.get("id") != node_container.get("id")):
+                _issue(issues, "TESTER_CONTAINER", "evaluation.tester.container.id",
+                       "同宿主的 existing tester 必须使用该宿主节点的容器")
     if task.get("eval_mode") == "acc":
         dataset = evaluation.get("dataset")
         if not isinstance(dataset, dict) or set(dataset) != {"id", "split", "scope"}:

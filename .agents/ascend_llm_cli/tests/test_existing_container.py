@@ -61,7 +61,9 @@ class ExistingContainerCompileTests(unittest.TestCase):
         self.assertEqual(group['root'], '/path/to/task-workspace/t')
         self.assertEqual(group['container_root'], '/workspace/tasks/t')
         self.assertEqual(group['mounts'], [])
-        self.assertNotIn('container', group)
+        # The borrowed container identity travels with the group so remote nodes
+        # can be reached via docker exec and the control side can verify it.
+        self.assertEqual(group['container'], {'id': CID, 'image': IMAGE})
         self.assertNotIn('image', group)
         # Runtime paths expand inside the borrowed container.
         self.assertTrue(any('/workspace/tasks/t/logs/prefill/logs/profiler' in value
@@ -353,6 +355,31 @@ class ExistingContainerWorkerTests(unittest.TestCase):
             self.assertEqual(args.args[2], ['npu:0'])
             self.assertEqual(args.kwargs, dict(keep_claims=False, timeout=10))
             self.assertEqual(result['result']['cleanup_status'], 'VERIFIED')
+
+    def test_existing_defaults_to_the_container_local_adapter(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)/'task'
+            group = dict(node='n', root=str(root), host='host', npu_ids=[0], ports=[],
+                         container_root='/workspace/tasks/t')
+            values = dict(
+                plan=dict(task_id='t', intent='deploy',
+                          deployment=dict(runtime=dict(mode='existing_container'))),
+                bindings={'nodes': {'n': dict(machine_id='d'*32,
+                                               container=dict(id=CID, image=IMAGE))}},
+                compiled=dict(topology=dict(groups={'g': group})))
+            request = dict(protocol_version='1.0', task_id='t', node='n', action='claim',
+                           command_id='claim1', group='g', runtime_sha256='a'*64,
+                           bundle_sha256='b'*64, token='c'*64, timeout_seconds=10)
+            with patch('deploy_eval_v2.node_worker.verify_runtime'), \
+                 patch('deploy_eval_v2.node_worker.verify_frozen',
+                       return_value={'plan.json': values['plan'],
+                                     'bindings.json': values['bindings'],
+                                     'compiled.json': values['compiled']}), \
+                 patch('deploy_eval_v2.node_worker.SelfContainerNode') as factory, \
+                 patch('deploy_eval_v2.executor_factory.local_machine_id', return_value='d'*32):
+                dispatch(root, request, guard_root=Path(folder)/'guard')
+            factory.assert_called_once()
+            self.assertEqual(factory.call_args.args[1], dict(id=CID, image=IMAGE))
 
 
 class StopScriptBoundaryTests(unittest.TestCase):

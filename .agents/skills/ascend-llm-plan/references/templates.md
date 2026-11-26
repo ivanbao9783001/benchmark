@@ -122,7 +122,7 @@ GSM8K：
 
 - `path` 必须替换为 POSIX 绝对路径，指向数据集目录。GPQA 目录含 `gpqa_diamond.csv`（按 CSV 记录计，不含表头）；GSM8K 目录必须同时含 `train.jsonl` 与 `test.jsonl`，评测与计数使用 `test.jsonl`，缺 `train.jsonl` 时原生 loader 直接失败。
 - 样本数不写死在代码或 schema：预检在测试机现场统计实际条数，`num_prompts` 超过实际条数会被拒绝。全量评测省略 `num_prompts`；mini 写 `num_prompts`，CLI 追加 `--num-prompts` 取前 N 条，不在配置里写 `test_range`。子集结果只用于快速冒烟/回归，不可与全量 accuracy 对比。
-- 数据需提前下载到测试机，CLI 不自动拉取；两个数据集目录同级存放（如 `/home/baoyifan/dataset/gpqa`、`/home/baoyifan/dataset/gsm8k`）。
+- 数据需提前下载到测试机，CLI 不自动拉取；两个数据集目录同级存放（如 `/data/datasets/gpqa`、`/data/datasets/gsm8k`）。
 
 合成数据（性能）：
 
@@ -136,7 +136,7 @@ GSM8K：
 
 拆成两个文件，避免整段贴错层级：`deploy-runtime-qwen3-8b.json` 整体贴到 `deployment.runtime`；`deploy-instance-qwen3-8b-tp2.json` 整体贴到 `deployment.instances[0]`。
 
-借用已有容器时，`deployment.runtime` 改用 `deploy-runtime-existing-container.json`（只有 `{"mode":"existing_container"}`），`deployment.image` **省略**（不要写 `null`），也不需要 `{{image.digest}}`；容器身份写入 bindings 的 `container`，并补 `container_work_root`。tester 在容器内时同样写 `container` 与 `container_work_root`；容器内可直接补 `host_python`，缺省按 contract 的探测顺序取已核验解释器（Python>=3.11 且能 import jsonschema）。启动档仍可描述实例与参数，但 `shm_size`、`privileged`、`devices` 等容器创建参数不会生效（容器已存在），不要据此假定可以调整容器规格，也不要假定工作根目录不存在。
+借用已有容器时，`deployment.runtime` 改用 `deploy-runtime-existing-container.json`（只有 `{"mode":"existing_container"}`），`deployment.image` **省略**（不要写 `null`），也不需要 `{{image.digest}}`；容器身份写入 bindings 的 `container`，并补 `container_work_root`。tester 与节点同规则：existing 的 tester 在容器内闭环，写 `container` 与 `container_work_root`，`python/aisbench/model_path/environment/datasets/machine_id` 均为容器内值；owned 的 tester 在宿主，不写 `container`。启动档仍可描述实例与参数，但 `shm_size`、`privileged`、`devices` 等容器创建参数不会生效（容器已存在），不要据此假定可以调整容器规格，也不要假定工作根目录不存在。
 
 ### 替换清单（提交前必须全部消除）
 
@@ -148,8 +148,8 @@ GSM8K：
 | `{{hccl.base_port}}` | HCCL 基端口，如 `64023` | bindings 端口分配：默认 64023，被占用时顺延；top_input 不写该值 |
 | `{{network.ip}}` | 节点 IP | bindings |
 | `{{network.interface}}` | 网卡名 | bindings |
-| `{{dataset.gpqa.root}}` | GPQA 数据集目录，如 `/home/baoyifan/dataset/gpqa` | 测试机实际路径 |
-| `{{dataset.gsm8k.root}}` | GSM8K 数据集目录，如 `/home/baoyifan/dataset/gsm8k` | 测试机实际路径 |
+| `{{dataset.gpqa.root}}` | GPQA 数据集目录，如 `/data/datasets/gpqa` | 测试机实际路径 |
+| `{{dataset.gsm8k.root}}` | GSM8K 数据集目录，如 `/data/datasets/gsm8k` | 测试机实际路径 |
 
 替换后 `placement.devices` 必须是 JSON 数字（写 `6`，不要留成 `"6"`）；`/dev/davinci` 后缀处仍然是字符串。
 
@@ -170,7 +170,7 @@ GSM8K：
 
 - 0.85 利用率下，精度评测到第 48/198 题时 TP1 worker 报 `Resource_Error_Insufficient_Device_Memory`（err 507899，ACL graph replay 申请 2 MB 失败），随后出现 `No available shared memory broadcast block found in 60 seconds`，engine 假死；取消后进入 RECOVERY_REQUIRED。
 - 卡上另有约 2.8 GB 既有占用，0.85 只余约 4.4 GB，不足 graph replay 与运行时分配。
-- 改为 0.72 + `max-model-len=8192` 后，启动占用约 21.2/29.49 GiB，198 题稳定完成（accuracy 26.2626%）。
+- 改为 0.72 + `max-model-len=8192` 后，启动占用约 21.2/29.49 GiB，该数据集全量（当次 198 题）稳定完成（accuracy 26.26%，当次实测）。
 
 因此共享卡环境优先使用 0.72；若确需提高，先确认卡上无其他占用，并按最小可用增量调整。
 

@@ -42,18 +42,18 @@
 | `on_idle` | 派单方，可省 | 派单方未给时按 `keep_service` 写回；`deploy_only` 只能取该值 |
 | `preempt_other_processes` | 派单方，可省 | 派单方未给时按 `false` 写回 |
 | `create_work_root` | 派单方，可省 | 派单方未给时按 `false` 写回；只约束节点运行根之外的根，任务自身运行根与交付根照常创建 |
-| 模型 id、`served_name`、`model_paths` | 派单方 | 每节点权重路径；`served_name` 可由模型名派生 |
+| 模型 id、`served_name`、`model_paths` | 派单方 | 每节点权重路径；`served_name` 可省略，省略即等于 `id`（`id` 受 `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$` 约束，原始模型名含点号时必须显式给） |
 | `devices` | 派单方 | 卡号；执行方用 `npu-smi` 核验可见性 |
 | `ports`（http / kv）、`endpoint` | 派生 | 从空闲端口段分配后写入 top_input |
-| `kv_transfer.connector` | 派单方 | PD 必填；执行方只核验两侧镜像都可用，不得自行选值 |
+| `kv_transfer.connector` | 派单方 | PD 必填；必须与镜像 tag 一起给出（镜像内 connector 名以运行时为准）。执行方在两侧容器按派生/取证文档只读确认存在与参数键，确认不了记 `UNVERIFIED`，不得自行选值或改写参数 |
 | `paths.proxy_program` | 现场 | proxy 节点上确认存在且可执行 |
 | `tester` 归属及其 host、路径、`machine_id` | 派单方（双机）/ 派生（单机或明确同机） | 双机 PD 必须明确测试端，避免与被测服务同机；同机时派生，其余现场取证 |
 | `evaluation.dataset` | 派单方 id；`split/scope` 派生 | acc 必填 |
-| `control_node` | 派生 | existing 即 `self` 节点 |
+| `control_node` | 派单方（owned）/ 派生（existing 即 `self` 节点） | 必须是 `nodes` 的键；existing 时等于唯一的 `self` 节点 |
 | `deliverables.local_dir` | 派单方优先，可省 | 派单方未给时缺省 `<控制机当前目录>/deploy-runs` 并写回；必须可写，否则停止，不另选目录 |
 | `constraints` | 派单方 | 不可越界项 |
 
-派单方最少只需回答：卡、模型与权重路径、任务、数据集、容器归属（双机另加对端 IP、容器 id、SSH 访问）。其余按上表取证或派生，并在审阅摘要与报告 `limitations` 中留痕。
+派单方最少只需回答：卡、模型与权重路径、任务、数据集、容器归属、可写根 `allowed_root`（授权边界，执行方不得自定；双机另加对端 IP、容器 id、SSH 访问）。其余按上表取证或派生，并在审阅摘要与报告 `limitations` 中留痕。
 
 ## 第四步：校验
 
@@ -76,3 +76,5 @@ deploy-eval-v2 validate-top-input --request <top_input.json>
 ## 验收标准
 
 一次通过：subagent 无需追问即可完成 `validate-top-input` → plan → 冻结 → readiness → 目标阶段，并交付四项状态（执行、证据完整性、有效性、清理）。任何一次返工都应先修 `skills/` 下的文档，而不是在 prompt 里补丁。
+
+监控与验收统一读 `deploy-eval-v2 --config control.json task-summary --task-ref <task.id>`：它只读汇总交付根产物、`progress.log` 与 `get-status`，给出每阶段状态、核心值与证据引用；取不到状态时 `state.source=unavailable` 并在 `limitations` 留痕。不要靠对话输出或模型 token 流判断进展。

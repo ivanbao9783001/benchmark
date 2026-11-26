@@ -17,18 +17,46 @@ def ssh_argv(host, remote_argv):
             host, shlex.join(remote_argv)]
 
 
-def host_argv(host, argv, link='ssh'):
+def container_argv(host, cid, argv):
+    """Reach a borrowed container through the host: ssh + ``docker exec -i``."""
+    if not isinstance(cid, str) or not re.fullmatch('[a-f0-9]{64}', cid):
+        raise ProtocolError('INVALID_INPUT: container identity')
+    if not isinstance(argv, list) or not argv:
+        raise ProtocolError('INVALID_INPUT')
+    return ssh_argv(host, ['docker', 'exec', '-i', cid, *argv])
+
+
+def host_argv(host, argv, link='ssh', container=None):
     """One target's argv; a self container runs the same protocol locally."""
     if link == 'local':
         if not isinstance(argv, list) or not argv:
             raise ProtocolError('INVALID_INPUT')
         return list(argv)
+    if link == 'container':
+        return container_argv(host, container, argv)
     if link != 'ssh':
         raise ProtocolError('INVALID_INPUT: transport link')
     return ssh_argv(host, argv)
 
 
-def exchange(argv, request, timeout=45, response_limit=8192, cancelled=None, input_file=None):
+def run_remote(argv, timeout=30, limit=65536):
+    """Bounded raw remote command (no protocol envelope) for host-only probes."""
+    if not isinstance(argv, list) or not argv or not 0 < timeout <= 86400:
+        raise ProtocolError('INVALID_INPUT')
+    try:
+        process = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise ProtocolError('UNKNOWN_OUTCOME: remote command timeout') from exc
+    except OSError as exc:
+        raise ProtocolError('SSH_UNAVAILABLE') from exc
+    if len(process.stdout) > limit or len(process.stderr) > limit:
+        raise ProtocolError('TRANSPORT_PROTOCOL_ERROR: oversized response')
+    return process.returncode, process.stdout, process.stderr
+
+
+def exchange(argv, request, timeout=45, response_limit=8192, cancelled=None, input_file=None,
+             container=False):
     """One final JSON response. Threads drain pipes with fixed memory bounds."""
     payload = encode(request) + b'\n'
     if len(payload) > 65536 or not 1 <= response_limit <= 32768 or not 0 < timeout <= 86400:
@@ -105,6 +133,9 @@ def exchange(argv, request, timeout=45, response_limit=8192, cancelled=None, inp
     if overflow.is_set():
         raise ProtocolError('TRANSPORT_PROTOCOL_ERROR: oversized response')
     if process.returncode not in (0, 2, 3, 4):
+        # 125/126/127 are docker exec's own failures, not a node-worker answer.
+        if container and process.returncode in (125, 126, 127):
+            raise ProtocolError('INVALID_INPUT: container exec unavailable')
         raise ProtocolError('UNKNOWN_OUTCOME')
     try:
         value = json.loads(output,object_pairs_hook=unique_object,parse_constant=reject_constant)

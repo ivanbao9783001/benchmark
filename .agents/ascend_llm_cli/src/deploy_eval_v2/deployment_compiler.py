@@ -56,6 +56,11 @@ def compile_bound_deployment(plan, bindings):
     if bindings['task_id'] != plan['task_id']:
         raise ProtocolError('INVALID_INPUT: deployment task identity')
     deployment = copy.deepcopy(plan['deployment'])
+    # served_name is the external name; when the plan omits it the model id is
+    # the single name. Resolving it here keeps argv, smoke checks and review
+    # digests on one value instead of letting callers invent a third name.
+    if not deployment['model'].get('served_name'):
+        deployment['model']['served_name'] = deployment['model']['id']
     existing = deployment['runtime'].get('mode', 'owned_container') == 'existing_container'
     selected = {}
     device_maps = {}
@@ -100,6 +105,10 @@ def compile_bound_deployment(plan, bindings):
                     launch[field] = expand(launch[field], context)
             if instance['role'] != 'proxy':
                 launch['preserve_reference'] = True
+                if instance['role'] in ('prefill', 'decode'):
+                    # engine_id has exactly one derived value; fill it so PD
+                    # compiles without demanding a field the CLI can derive.
+                    launch.setdefault('engine_id', deployment['id']+'-'+instance['id'])
                 if 'hccl' in ports and 'HCCL_IF_BASE_PORT' in launch.get('env', {}) and str(launch['env']['HCCL_IF_BASE_PORT']) != str(ports['hccl']):
                     raise ProtocolError('INVALID_INPUT: HCCL port conflicts with binding')
         self_slots=[slot for slot,value in bindings['nodes'].items()
@@ -120,6 +129,11 @@ def compile_bound_deployment(plan, bindings):
                 # logs use its own writable root; publishable host state stays
                 # under the unchanged host task root.
                 group['container_root'] = str(PurePosixPath(binding['container_work_root'])/plan['task_id'])
+                # Every existing node executes inside its container, reached by
+                # the control side through SSH + docker exec; only the self node
+                # runs locally.
+                group['container'] = {key: copy.deepcopy(binding['container'][key])
+                                      for key in ('id', 'image') if key in binding['container']}
                 if 'device_id_map' in binding['container']:
                     group['device_id_map'] = copy.deepcopy(binding['container']['device_id_map'])
                 group['mounts'] = []
@@ -138,6 +152,14 @@ def compile_bound_deployment(plan, bindings):
                 group['container'] = {**DEFAULT_CONTAINER, 'devices': list(DEVICES),
                                       **deployment['runtime']['container']}
                 group['image'] = deployment['runtime']['image']
+            # Derived values stay visible in the frozen package: an omitted map is
+            # a decision (identity assumed), not an absence.
+            declared_map = (copy.deepcopy(binding['container'].get('device_id_map'))
+                            if existing else None)
+            group['device_map'] = dict(
+                declared=declared_map,
+                basis=('declared' if declared_map else
+                       'identity_assumed' if existing else 'physical'))
             for mount in group['mounts']:
                 linux_path(mount['source']); linux_path(mount['target'])
             for command in group['commands']:

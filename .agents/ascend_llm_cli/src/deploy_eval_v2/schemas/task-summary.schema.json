@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deploy-eval-v2.local/schemas/task-summary.schema.json",
+  "title": "Read-only task summary",
+  "type": "object",
+  "required": ["schema_version", "status", "summary"],
+  "properties": {
+    "schema_version": {"const": "task-summary/1"},
+    "status": {"enum": ["OK", "ERROR"]},
+    "task_id": {"type": ["string", "null"]},
+    "protocol_version": {"const": "1.0"},
+    "time": {"type": "string"},
+    "summary": {
+      "type": "object",
+      "required": ["task", "state", "phases", "operations", "limitations", "updated_at"],
+      "properties": {
+        "task": {
+          "type": "object",
+          "required": ["id"],
+          "properties": {
+            "id": {"type": ["string", "null"]},
+            "action": {"type": ["string", "null"]},
+            "topology": {"enum": ["pd", "colocated", null]},
+            "runtime_mode": {"type": ["string", "null"]},
+            "deployment_id": {"type": ["string", "null"]},
+            "model": {"type": ["string", "null"]},
+            "model_id": {"type": ["string", "null"]},
+            "endpoint": {"type": ["object", "null"]},
+            "connector": {"type": ["string", "null"]},
+            "node_count": {"type": ["integer", "null"]},
+            "nodes": {"type": "array", "items": {"type": "object"}},
+            "frozen": {"type": "object"}
+          },
+          "additionalProperties": true
+        },
+        "state": {
+          "type": "object",
+          "required": ["source"],
+          "properties": {
+            "source": {"enum": ["get-status", "unavailable", "none"]},
+            "task_state": {"type": ["string", "null"]},
+            "task_version": {"type": ["integer", "null"]},
+            "operation_id": {"type": ["string", "null"]},
+            "offline": {"type": "boolean"},
+            "error": {"type": ["object", "null"]}
+          },
+          "additionalProperties": true
+        },
+        "phases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "status", "detail"],
+            "properties": {
+              "name": {"type": "string"},
+              "status": {
+                "enum": ["succeeded", "failed", "unverified", "unknown",
+                         "running", "pending", "blocked", "cancelled"]
+              },
+              "detail": {"type": "object"}
+            },
+            "additionalProperties": true
+          }
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["operation_id", "kind", "status", "summary", "evidence_ref"],
+            "properties": {
+              "kind": {"enum": ["deploy", "eval", "release", "operation"]},
+              "status": {"enum": ["succeeded", "failed", "unverified", "unknown", "cancelled"]}
+            },
+            "additionalProperties": true
+          }
+        },
+        "service": {"type": ["object", "null"]},
+        "evaluation": {"type": ["object", "null"]},
+        "cleanup": {"type": ["object", "null"]},
+        "limitations": {"type": "array", "items": {"type": "string"}},
+        "updated_at": {"type": "string"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

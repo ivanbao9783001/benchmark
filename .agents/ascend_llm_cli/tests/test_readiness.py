@@ -174,11 +174,41 @@ class ReadinessTests(unittest.TestCase):
              patch('deploy_eval_v2.readiness.control_is_posix',return_value=True),\
              patch('deploy_eval_v2.readiness.local_machine_id',return_value='a'*32):
             result=check_ready(request,config)
-            self.assertIn('TESTER_SELF_CONTAINER_MISMATCH',result['readiness']['blockers'])
+            self.assertIn('TESTER_CONTAINER_MISMATCH',result['readiness']['blockers'])
             values['bindings.json']['testers']['tester']['container']['id']='c'*64
             self.assertEqual(check_ready(request,config)['readiness']['blockers'],[])
             values['bindings.json']['testers']['tester']['container'].pop('image')
             self.assertEqual(check_ready(request,config)['readiness']['blockers'],[])
+
+    def test_tester_on_a_remote_node_host_must_use_that_nodes_container(self):
+        values={'plan.json':dict(task_id='t',intent='deploy',
+                    deployment=dict(runtime=dict(mode='existing_container')),
+                    evaluation=dict(test_binding='tester')),
+                'bindings.json':dict(nodes={
+                        'a':dict(machine_id='a'*32,host='host-a',
+                                 container=dict(id='c'*64,image='sha256:'+'d'*64,self=True)),
+                        'b':dict(machine_id='b'*32,host='host-b',python='/opt/venv/bin/python',
+                                 container=dict(id='e'*64,image='sha256:'+'f'*64))},
+                    testers={'tester':dict(machine_id='b'*32,host='host-b',work_root='/work',
+                        container=dict(id='e'*64,image='sha256:'+'f'*64))}),
+                'compiled.json':{'topology':{'groups':{
+                    'a/model':dict(node='a',host='host-a',root='/work/t',self=True),
+                    'b/model':dict(node='b',host='host-b',root='/work/tb')}}}}
+        request=dict(task_ref='t',runtime_archive='unused.zip',input_directory='unused',
+                     runtime_sha256='c'*64,bundle_sha256='d'*64)
+        config={'tasks':{'t':dict(host='host-a',root='/work/t',allowed_root='/work',
+                                  task_root='/tmp/delivery/t',self=True,
+            nodes={'b':dict(host='host-b',root='/work/tb',allowed_root='/work')},
+            tester=dict(host='host-b',root='/work/t',allowed_root='/work',python='/p'))}}
+        with patch('deploy_eval_v2.readiness.verify_frozen',return_value=values),\
+             patch('deploy_eval_v2.readiness.install_archive'),\
+             patch('deploy_eval_v2.readiness.shutil.which',return_value='/ssh'),\
+             patch('deploy_eval_v2.readiness.control_is_posix',return_value=True),\
+             patch('deploy_eval_v2.readiness.local_machine_id',return_value='a'*32):
+            self.assertEqual(check_ready(request,config)['readiness']['blockers'],[])
+            values['bindings.json']['testers']['tester']['container']['id']='c'*64
+            self.assertIn('TESTER_CONTAINER_MISMATCH',
+                          check_ready(request,config)['readiness']['blockers'])
 
     def test_offline_readiness_requires_attested_tester_and_reports_no_remote_validation(self):
         for attested in (False,True):

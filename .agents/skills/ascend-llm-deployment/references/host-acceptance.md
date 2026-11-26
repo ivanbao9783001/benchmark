@@ -1,11 +1,9 @@
-# v2 首轮上机测试
+# v2 上机验收
 
-本地初版代码与验证已完成；此文列出经明确环境授权后执行的上机验收，不表示实机或性能已验收。
-首轮支持：外部服务独立 eval（runtime 在测试机）、或自有服务
-deploy → eval → release（测试进程在主节点或显式绑定的远端测试机）。多节点模型部署
-已有执行路径，但首次验证应先完成单节点，再增加节点。
+本地代码与验证已完成；本文列出经明确环境授权后执行的上机验收项。每次更换宿主、容器或镜像都要重新验收，历史通过记录不迁移到新环境。
+支持：外部服务独立 eval（runtime 在测试机）、或自有服务 deploy → eval → release（测试进程在主节点或显式绑定的远端测试机）。单机与双机 PD 均已有执行路径，双机 PD 已完成 existing 容器的跨机验收；新增拓扑仍建议先单节点跑通再增加节点。
 
-参数必须保留用户原意，不得为上机修改。部署重试已按已确认失败、清理核验及共享期限实现；未知结果不重试。远端独立测试机需配置 tester 发布目标，行为见 remote-tester.md。缓存重置仅对 owned 评测可用，必须使用已授权的冻结逐实例目标，行为见 cache-reset.md；
+参数必须保留用户原意，不得为上机修改。部署重试已按已确认失败、清理核验及共享期限实现；未知结果不重试。远端独立测试机需配置 tester 发布目标，行为见 [remote-tester.md](../ascend-llm-eval/references/remote-tester.md)。缓存重置仅对 owned 评测可用，必须使用已授权的冻结逐实例目标，行为见 [cache-reset.md](../ascend-llm-eval/references/cache-reset.md)；
 `prepare-inputs(stage=eval)` 生成的 external_eval 固定 `reset_cache=false`，外部服务不承诺清缓存。稳态/性能按实际证据判定；缺失时间戳、未知版本格式或路由/预热覆盖不足时返回 UNVERIFIED。测试同时核验执行、证据和资源生命周期。
 
 ## 1. 安装与无模型检查
@@ -23,7 +21,7 @@ deploy-eval-v2 --version
 
 经授权后，在 Linux 的独立测试目录运行无模型集成测试：
 
-Use the public socket-start workflow in [socket-validation.md](../../ascend-llm-router/references/socket-validation.md). The Agent itself must call deploy, then eval upon deployment.ready, then release upon evaluation.completed. No source or unit test reading is needed. The legacy developer unit test is not a substitute for Agent acceptance.
+按 [socket-validation.md](../../ascend-llm-router/references/socket-validation.md) 的公开 socket-start 流程执行；Agent 自身必须依次调用 deploy、`deployment.ready` 后 eval、`evaluation.completed` 后 release，不需要读源码或单测。旧的开发者单测不能替代 Agent 验收。
 
 在每个目标节点核验 Python 版本、jsonschema 导入、`deploy-eval-v2 identity` 可输出 32 位小写十六进制
 身份（身份链见 installation.md 第 5 节，无需预置 `/etc/machine-id`）、

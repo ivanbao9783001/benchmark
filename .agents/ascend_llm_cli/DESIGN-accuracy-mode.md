@@ -9,7 +9,7 @@
 
 ## 0. 先读这一页（给新 Agent 的行动摘要）
 
-1. 现状：`ascend-llm-eval` 只有性能评测，`case.mode` 只允许 `perf`；精度是明确预留但未实现的。
+1. 起点（实现前）：`ascend-llm-eval` 只有性能评测，`case.mode` 只允许 `perf`，精度是预留项；本设计落地后 `mode=acc` 已可用，现状以 SKILL 与 CLI 为准。
 2. 本期的唯一交付：在同一个 eval 能力里增加 `mode=acc`，支持原生任务目录 **GPQA-Diamond（`gpqa_gen_0_shot_str`）+ GSM8K（`gsm8k_gen_0_shot_cot_str`）**，缺省全量、可选 `num_prompts` 子集，只输出 accuracy。
 3. 不允许：新增独立 skill、改动 AISBench 安装目录、增加门禁/基线。数据集扩展只能通过任务目录新增原生条目（数据文件与原生语义随任务固定），子集只能通过 case 的 `num_prompts` 开启，不得改题。
 4. 代码入口：`src/deploy_eval_v2/aisbench_cli.py`、`plan_model.py`、`evaluate.py`、`benchmark_preflight.py`、`result_contract.py`、`external_executor.py`、`owned_executor.py`。
@@ -30,7 +30,9 @@
 - 输出：`results/<operation_id>/stage-result.json` 与 `evaluation.completed` 事件
 - 执行端：`external_eval` 的 tester 必须与协调器同机（`executor_factory` 校验 machine_id）；托管部署（`owned`）评测可以把 tester 放到远端 tester 机器
 
-### 1.2 当前 eval 的真实能力边界
+### 1.2 实现前的 eval 能力边界（基线，已改造）
+
+下表是改造前的基线，用于解释改造范围；当前 CLI 已支持 acc，现状以 SKILL 与 `--version` 为准。
 
 | 事实 | 代码位置 |
 |---|---|

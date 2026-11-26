@@ -7,8 +7,22 @@ from .input_publication import build_input_archive
 from .protocol import ProtocolError,envelope
 from .publication import build_archive,install_archive
 from .remote_guard import resolve_guard_root
-from .ssh_publication import probe_guard_root,publish_task
+from .ssh_publication import probe_guard_root,publish_task,verify_container
 from .ssh_transport import exchange,host_argv
+
+
+def target_link(target):
+    """(transport link, borrowed container id) for one frozen target.
+
+    A borrowed container is reached through its host; the self container runs
+    locally; everything else is plain SSH (owned nodes have no container key).
+    """
+    if target.get('self') is True:
+        return 'local',None
+    container=target.get('container')
+    if isinstance(container,dict) and isinstance(container.get('id'),str):
+        return 'container',container['id']
+    return 'ssh',None
 
 
 def task_binding(config,task,*,delivery=False):
@@ -92,7 +106,7 @@ def guard_targets(values):
             for group in groups.values()}
 
 
-def publish(request,config,*,publisher=publish_task,prober=probe_guard_root):
+def publish(request,config,*,publisher=publish_task,prober=probe_guard_root,verifier=verify_container):
     required={'task_ref','runtime_archive','input_directory','runtime_sha256','bundle_sha256'}
     if not isinstance(request,dict) or set(request)!=required or any(not isinstance(v,str) or not 1<=len(v)<=512 for v in request.values()):
         raise ProtocolError('INVALID_INPUT: publication request')
@@ -116,11 +130,23 @@ def publish(request,config,*,publisher=publish_task,prober=probe_guard_root):
         build_input_archive(request['input_directory'],inputs,request['bundle_sha256'],request['runtime_sha256'])
         completed=0
         for name,target in targets:
+            link,container=target_link(target)
+            # The host is the only place docker exists; verify the borrowed
+            # container once, before any runtime/inputs leave the control side.
+            if link=='container':
+                try:
+                    verifier(target['host'],container,target.get('container',{}).get('image'),task)
+                except (ProtocolError,OSError) as error:
+                    response=envelope(task,0,'ERROR')
+                    response.update(publication=dict(completed_targets=completed,total_targets=len(targets),
+                                                     failed_target=name),started=False)
+                    response['error']=dict(code='INVALID_INPUT',message=str(error)[:512],retryable=True)
+                    return response
             guard=guards.get((target['host'],target['root']))
             if guard is not None:
                 try:
                     prober(target['host'],target.get('python','/usr/bin/python3'),guard,task,
-                           link='local' if target.get('self') is True else 'ssh')
+                           link=link,container=container)
                 except (ProtocolError,OSError) as error:
                     response=envelope(task,0,'ERROR')
                     response.update(publication=dict(completed_targets=completed,total_targets=len(targets),
@@ -131,7 +157,7 @@ def publish(request,config,*,publisher=publish_task,prober=probe_guard_root):
             try:
                 publisher(target['host'],target.get('python','/usr/bin/python3'),target['root'],
                           request['runtime_archive'],inputs,task,request['runtime_sha256'],request['bundle_sha256'],
-                          link='local' if target.get('self') is True else 'ssh')
+                          link=link,container=container)
                 completed+=1
             except (ProtocolError,OSError):
                 response=envelope(task,0,'ERROR')
@@ -159,5 +185,6 @@ def start_task(request,config,*,transport=exchange):
     bootstrap='import sys; sys.path.insert(0, '+repr(root+'/runtime')+'); from deploy_eval_v2.startup import main; raise SystemExit(main())'
     remote=dict(protocol_version='1.0',task_id=request['task_ref'],python=python,
                 **{k:request[k] for k in fields-{'task_ref'}})
-    link='local' if binding.get('self') is True else 'ssh'
-    return transport(host_argv(binding['host'],[python,'-B','-c',bootstrap,'--root',root],link),remote,timeout=90)
+    link,container=target_link(binding)
+    return transport(host_argv(binding['host'],[python,'-B','-c',bootstrap,'--root',root],link,container),
+                     remote,timeout=90,container=link=='container')

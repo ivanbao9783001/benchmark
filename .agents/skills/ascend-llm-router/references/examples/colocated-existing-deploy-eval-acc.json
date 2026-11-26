@@ -22,7 +22,6 @@
       },
       "container": {
         "id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        "image": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         "self": true
       },
       "container_work_root": "/srv/containers/work",
@@ -63,7 +62,6 @@
       "aisbench": "/workspace/venvs/aisbench/bin/ais_bench",
       "model_path": "/models/Qwen3-8B",
       "machine_id": "0123456789abcdef0123456789abcdef",
-      "host_python": "/usr/bin/python3",
       "container": {
         "id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         "image": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

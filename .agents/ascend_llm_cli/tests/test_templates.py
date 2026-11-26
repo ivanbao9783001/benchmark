@@ -467,14 +467,14 @@ class TopInputValidatorTest(unittest.TestCase):
 
     def test_self_node_may_omit_image(self):
         data = json.loads(json.dumps(self.example))
-        data["nodes"]["n1"]["container"].pop("image")
+        self.assertNotIn("image", data["nodes"]["n1"]["container"])
         codes = {issue["code"] for issue in validate_top_input(data)["issues"]}
         self.assertNotIn("CONTAINER_SHAPE", codes)
         self.assertNotIn("CONTAINER_IMAGE", codes)
 
     def test_non_self_node_must_keep_image(self):
         def mutate(data):
-            data["nodes"]["n1"]["container"].pop("image")
+            data["nodes"]["n1"]["container"].pop("image", None)
             data["nodes"]["n1"]["container"].pop("self")
         self.assertIn("CONTAINER_SHAPE", self.codes(mutate))
 
@@ -493,6 +493,30 @@ class TopInputValidatorTest(unittest.TestCase):
         data["nodes"]["n2"]["network"]["ip"] = "192.0.2.39"
         codes = {issue["code"] for issue in validate_top_input(data)["issues"]}
         self.assertIn("SELF_DUPLICATE", codes)
+
+    def test_mixed_container_mode_is_rejected(self):
+        data = json.loads((EXAMPLES / "pd-dual-host-existing-deploy-only.json").read_text(encoding="utf-8"))
+        data["nodes"]["n2"].pop("container")
+        data["nodes"]["n2"].pop("container_work_root")
+        codes = {issue["code"] for issue in validate_top_input(data)["issues"]}
+        self.assertIn("MODE_MIXED", codes)
+
+    def test_existing_tester_must_stay_in_container(self):
+        def mutate(data):
+            data["evaluation"]["tester"].pop("container")
+            data["evaluation"]["tester"].pop("container_work_root")
+        self.assertIn("TESTER_CONTAINER_REQUIRED", self.codes(mutate))
+
+    def test_existing_tester_must_use_that_hosts_node_container(self):
+        codes = self.codes(lambda data: data["evaluation"]["tester"]["container"].update(id="f" * 64))
+        self.assertIn("TESTER_CONTAINER", codes)
+
+    def test_owned_tester_must_not_use_container(self):
+        data = json.loads((EXAMPLES / "colocated-owned-deploy-eval-acc.json").read_text(encoding="utf-8"))
+        data["evaluation"]["tester"]["container"] = {"id": "a" * 64}
+        data["evaluation"]["tester"]["container_work_root"] = "/srv/work"
+        codes = {issue["code"] for issue in validate_top_input(data)["issues"]}
+        self.assertIn("TESTER_CONTAINER_FORBIDDEN", codes)
 
     def test_scenario_id_does_not_encode_self(self):
         report = validate_top_input(self.example)

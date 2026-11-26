@@ -58,7 +58,6 @@
       "aisbench": "/srv/venvs/aisbench/bin/ais_bench",
       "model_path": "/models/Qwen3-8B",
       "machine_id": "0123456789abcdef0123456789abcdef",
-      "host_python": "/usr/bin/python3",
       "datasets": {
         "gpqa": {
           "type": "aisbench_task",

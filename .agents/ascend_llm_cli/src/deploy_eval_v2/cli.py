@@ -30,7 +30,7 @@ def main(argv=None):
         for name in ('deploy', 'eval', 'release', 'cancel', 'freeze-inputs', 'verify-inputs','draft-review','package-runtime','publish-task','start-task','check-ready','install-skills','socket-start','stop-runtime','prepare-inputs','export-contracts','validate-top-input'):
             commands.add_parser(name).add_argument('--request', required=True)
         commands.add_parser('identity')
-        for name in ('get-status', 'wait-event', 'read-result'):
+        for name in ('get-status', 'wait-event', 'read-result', 'task-summary'):
             child = commands.add_parser(name)
             child.add_argument('--task-ref', required=True)
             if name == 'wait-event':
@@ -108,6 +108,35 @@ def main(argv=None):
             validate_command(request)
         else:
             task = args.task_ref
+            if args.kind == 'task-summary':
+                from .publication_cli import task_binding
+                from .task_summary import summarize
+                binding = task_binding(config, task, delivery=True)
+                status, status_error = None, None
+                try:
+                    root = PurePosixPath(binding['root'])
+                    bootstrap = ('import sys; sys.path.insert(0, ' + repr(str(root) + '/runtime') +
+                                 '); from deploy_eval_v2.remote_client import main; raise SystemExit(main())')
+                    remote = [binding.get('python', 'python3'), '-B', '-c', bootstrap, '--root', str(root)]
+                    link = 'local' if binding.get('self') is True else 'ssh'
+                    status = exchange(host_argv(binding['host'], remote, link),
+                                      {'kind': 'get-status', 'task_id': task, 'protocol_version': '1.0'},
+                                      timeout=15, response_limit=8192)
+                    if not isinstance(status, dict):
+                        status_error = {'code': 'UNKNOWN_OUTCOME', 'message': 'get-status unavailable'}
+                        status = None
+                    elif status.get('status') == 'ERROR':
+                        status_error = status.get('error') or {'code': 'UNKNOWN_OUTCOME'}
+                        status = None
+                except (ProtocolError, ValueError, KeyError, OSError, TypeError) as exc:
+                    status_error = {'code': (str(exc).split(':', 1)[0]
+                                             if isinstance(exc, ProtocolError) else 'UNKNOWN_OUTCOME'),
+                                    'message': 'get-status unavailable'}
+                response = summarize(binding, task, status=status, status_error=status_error)
+                if len(encode(response)) > 8192:
+                    raise ProtocolError('INVALID_INPUT: output reference too large')
+                sys.stdout.buffer.write(encode(response) + b'\n')
+                return exit_code(response)
             request = {k: v for k, v in vars(args).items() if k not in ('config', 'task_ref') and v is not None}
             request.update(task_id=task, protocol_version='1.0')
             validate_query(request)

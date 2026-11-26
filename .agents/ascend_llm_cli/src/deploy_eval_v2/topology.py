@@ -24,7 +24,7 @@ def producer_identity_warnings(dep):
     seen = {}; warnings = []
     for link in dep.get('connections', {}).get('kv_transfer', []):
         producer = instances.get(link['producer'], {})
-        if link['connector'] != 'MooncakeConnectorV2' or producer.get('role') != 'prefill':
+        if producer.get('role') != 'prefill':
             continue
         launch = producer['launch']
         engine_id = launch.get('kv_transfer_config', {}).get(
@@ -32,7 +32,7 @@ def producer_identity_warnings(dep):
         key = (link['consumer'], str(engine_id))
         previous = seen.setdefault(key, producer['id'])
         if previous != producer['id']:
-            warnings.append('UNVERIFIED MooncakeConnectorV2 declared producer engine_id duplicate for consumer '+
+            warnings.append('UNVERIFIED '+link['connector']+' declared producer engine_id duplicate for consumer '+
                             link['consumer']+': '+previous+' and '+producer['id']+' use '+repr(engine_id)+
                             '; preserve reference IDs and verify effective identities in the selected image and runtime')
     return warnings
@@ -225,7 +225,10 @@ def compile_deployment(dep, nodes, device_maps=None):
         env = copy.deepcopy(launch.get('env', {}))
         if item['role'] == 'proxy':
             routing = next(x for x in dep['connections']['routing'] if x['proxy'] == item['id'])
-            argv = ['python3', '{{paths.'+launch.get('proxy_program_key','proxy_program')+'}}', '--host', node['network']['ip'], '--port', str(ports['http'])]
+            # Listen on all interfaces while advertising node.network.ip: the
+            # bound IP keeps remote peers/HCCL working, 0.0.0.0 additionally
+            # serves same-container loopback probes.
+            argv = ['python3', '{{paths.'+launch.get('proxy_program_key','proxy_program')+'}}', '--host', '0.0.0.0', '--port', str(ports['http'])]
             for prefix, peers in [('prefiller', routing['prefillers']), ('decoder', routing['decoders'])]:
                 argv += ['--'+prefix+'-hosts']+[addresses[p]['host'] for p in peers]
                 argv += ['--'+prefix+'-ports']+[str(addresses[p]['ports']['http']) for p in peers]
@@ -249,7 +252,7 @@ def compile_deployment(dep, nodes, device_maps=None):
             # Listen on all addresses so colocated testers can use loopback while
             # remote peers keep using node.network.ip; HCCL/VLLM_HOST_IP stay on the bound IP.
             args.update(host='0.0.0.0', port=ports['http'])
-            args['served-model-name'] = dep['model']['served_name']
+            args['served-model-name'] = dep['model'].get('served_name') or dep['model']['id']
             if launch.get('preserve_reference'):
                 env = copy.deepcopy(launch.get('env',{}))
             node_map = maps.get(placement['node'])
@@ -280,13 +283,11 @@ def compile_deployment(dep, nodes, device_maps=None):
                 args['kv-transfer-config'] = {'kv_connector': link['connector'],
                     'kv_role': 'kv_producer' if item['role'] == 'prefill' else 'kv_consumer',
                     'kv_port': str(ports['kv']), 'engine_id': launch.get('engine_id',dep['id']+'-'+item['id']),
-                    'kv_connector_extra_config': {'ascend_local_comm_res_path': '{{paths.comm}}',
+                    # Connector-specific extra keys come from the confirmed reference
+                    # launch; synthesized config stays connector-neutral.
+                    'kv_connector_extra_config': {
                         'prefill': {'dp_size': p.get('data-parallel-size', 1), 'tp_size': p.get('tensor-parallel-size', 1)},
                         'decode': {'dp_size': d.get('data-parallel-size', 1), 'tp_size': d.get('tensor-parallel-size', 1)}}}
-                if link['connector']=='MooncakeConnectorV2':
-                    # This connector only loads endpoint files when explicitly
-                    # configured. Do not force legacy endpoint-file semantics.
-                    args['kv-transfer-config']['kv_connector_extra_config'].pop('ascend_local_comm_res_path')
                 if 'kv_transfer_config' in launch:
                     exact=copy.deepcopy(launch['kv_transfer_config'])
                     for key in ('kv_connector','kv_role','kv_port','engine_id'):

@@ -28,14 +28,12 @@ evaluation.completed 仅表示阶段结束。按结果决定下一 case 或收�
 独立 external_eval 的框架收尾：先核验 evaluation.completed、原生结果和被测服务仍健康，再确认 get-status 无活动 operation。当前CLI不允许直接停止EVALUATED runtime；如无需继续case，使用原评测task_ref和当前expected_version提交 `cancel`（scope=task，新的request_id），只终结本评测会话。external_eval契约不具备部署或服务释放权，此cancel不会停止被测服务。等 operation.cancelled 且 cleanup_status=VERIFIED 后，用原启动nonce调用stop-runtime；再核验外部服务仍健康，补收最终task.jsonl。此流程不是release服务，不需要也不得取得服务部署归属身份。若清理未知或仍有活动操作，报告并按原身份查询，不以手工kill或换任务掩盖未知状态。保留evaluation.completed成功结果；随后task会话终结的CANCELLED不等于性能请求被取消。
 
 ## 容器内测试工具
-AISBench 可位于宿主或已有运行容器。宿主未找到工具时，继续只读检查已有容器的工具、解释器、依赖、tokenizer和网络；不要要求用户重复提供可自行发现的绑定。服务节点为 `container.self=true` 且 tester 的 `machine_id` 等于本机时，测试工具就在当前容器内本地执行，不经过 SSH 或 `ContainerTester`；判定规则见 [remote-tester.md](references/remote-tester.md)。
+AISBench 可位于宿主或已有运行容器；宿主未找到工具时继续只读检查已有容器的工具、解释器、依赖、tokenizer 与网络，不要求用户重复提供可自行发现的绑定。服务节点为 `container.self=true` 且 tester 的 `machine_id` 等于本机时，测试在当前容器内本地执行，不经 SSH 或 `ContainerTester`（判定见 [remote-tester.md](references/remote-tester.md)）。tester 的容器归属、路径与取值规则以 plan 的 [plan-contract.md](../ascend-llm-plan/references/plan-contract.md#容器内测试工具) 为唯一来源，本阶段不重述。
 
-容器 tester 的字段、路径归属（`python`/`aisbench`/`model_path`/`environment`/`datasets` 属容器内，`host_python` 与 `control.json` 的 `python` 属宿主）以及 `container_work_root` 的适用条件（容器未把 `work_root` 暴露在同一路径时才需要）以 plan 的 [plan-contract.md](../ascend-llm-plan/references/plan-contract.md) 为唯一来源，本阶段不重述。
-
-本阶段只负责执行边界：按 plan 阶段的冻结前核验结果复核容器身份，并只读确认 endpoint 从容器可达、AISBench 依赖完整（工具存在不代表依赖完整）。使用公开CLI执行，不手写docker exec负载封装。容器仅提供测试环境，不授予停止、重启、删除容器或被测服务的权限。执行器只停止本任务工具进程组；证据回收失败或清理未知必须报告，不能标记完整。
+本阶段只负责执行边界：按冻结前核验结果复核容器身份，并只读确认 endpoint 从容器可达、AISBench 依赖完整（工具存在不代表依赖完整）。使用公开CLI执行，不手写docker exec负载封装。容器仅提供测试环境，不授予停止、重启、删除容器或被测服务的权限。执行器只停止本任务工具进程组；证据回收失败或清理未知必须报告，不能标记完整。
 
 ## 服务健康路径
-模型和代理健康路由必须分别从本轮参考或实际接口确认，不统一套用/health。deploy实例checks.health绑定各自路径；service.json携带入口health_path；部署后的eval沿用该路径。独立prepare-inputs(stage=eval)允许health_path字段，与endpoint同源；默认/health只适用于已确认提供该路由的服务。用户提供service对象时沿用其health_path。仅设置健康路径不授予服务管理权限。AISBench预检也从容器实际测试环境访问同一路由。
+模型与代理健康路由必须分别从本轮参考或实际接口确认，不统一套用`/health`；deploy 实例的 `checks.health` 绑定各自路径，`service.json` 携带入口 `health_path`，部署后的 eval 沿用该路径。独立 `prepare-inputs(stage=eval)` 允许 `health_path` 字段，与 endpoint 同源；默认 `/health` 只适用于已确认提供该路由的服务。仅设置健康路径不授予服务管理权限；AISBench 预检也从容器实际测试环境访问同一路由。
 
 ## 有效性与日志归集
 普通原生性能case没有shared_prefix_ratio时，性能有效性由原生请求记录、负载和性能汇总证据决定；附加prefix指标保留各自验证状态，不作为普通case的必需门槛。有shared_prefix_ratio时仍须核验数据、前缀指标、路由和预热覆盖，不因普通case规则放宽。原生合成input_tokens是工具配置目标；实际重新分词长度另列synthetic-evidence，不把目标长度冒充实测长度，不自行改造合成数据。目标与实测并列展示，长度偏差只作诊断、不作为通过门槛（synthetic的exact标记同理）；有shared_prefix_ratio时按实测前缀覆盖判定；锚与候选对比时以实测输入长度均值判断负载是否可比。

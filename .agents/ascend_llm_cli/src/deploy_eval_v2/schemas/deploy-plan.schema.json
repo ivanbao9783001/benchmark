@@ -50,8 +50,7 @@
             }
           },
           "required": [
-            "id",
-            "served_name"
+            "id"
           ]
         },
         "runtime": {

@@ -20,7 +20,7 @@
 | `nodes.<id>` | `host`、`allowed_root`、`python`、`guard_root`、`model_paths`、`network`（建议给）、`authorization` |
 | `deployment.image` | **owned 必填**：一个部署共用一个 `sha256:` 镜像摘要 |
 | `deployment.instances` | 1 个 `mixed`，`ports` 只写 `http` |
-| `evaluation.tester` | `host`、`work_root`、`python`、`aisbench`、`model_path`、`machine_id`、`datasets.<id>` 必填；`host_python` 建议显式给出；测试在宿主上进行，`machine_id` 用 `deploy-eval-v2 identity` 在宿主取证 |
+| `evaluation.tester` | `host`、`work_root`、`python`、`aisbench`、`model_path`、`machine_id`、`datasets.<id>` 必填；测试在宿主上进行，`machine_id` 用 `deploy-eval-v2 identity` 在宿主取证；不写 `container` |
 | `evaluation.dataset` | `{id, split, scope}`，必须与 `datasets` 中的键一致 |
 | 不写 | `nodes.<id>.container`、`nodes.<id>.container_work_root`、`evaluation.service`、`evaluation.tester.container` |
 

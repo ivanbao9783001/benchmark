@@ -8,7 +8,6 @@ from .launcher import validate_identity
 from .external_executor import ExternalExecutor
 from .owned_executor import OwnedExecutor
 from .docker_node import DockerNode
-from .existing_container_node import ExistingContainerNode
 from .self_container_node import SelfContainerNode
 from .ssh_node import SSHNode
 from .remote_guard import HostGuard,resolve_guard_root
@@ -61,15 +60,33 @@ def build_executor(root,identity,*,machine_id_reader=local_machine_id,guard_root
                             plan['task_id'],identity['nonce'])
             container=binding.get('container')
             if existing_mode:
-                if isinstance(container,dict) and container.get('self') is True:
-                    nodes[slot]=SelfContainerNode(guard,container)
-                else:
-                    nodes[slot]=ExistingContainerNode(guard,container)
+                # The local node is the control container and must be self: it
+                # runs in-process and is never re-entered through docker.
+                if not (isinstance(container,dict) and container.get('self') is True):
+                    raise ProtocolError('INVALID_INPUT: local existing node must be the self container')
+                nodes[slot]=SelfContainerNode(guard,container)
             else:
                 nodes[slot]=DockerNode(guard)
         else:
-            nodes[slot]=SSHNode(plan['task_id'],slot,compiled,identity['bundle_sha256'],
-                               identity['runtime_sha256'],identity['nonce'],coordinator_root=root)
+            if existing_mode:
+                container=binding.get('container')
+                python=binding.get('python')
+                if not isinstance(container,dict) or not isinstance(container.get('id'),str):
+                    raise ProtocolError('INVALID_INPUT: existing remote node requires container')
+                # No host-interpreter fallback: the worker must launch with the
+                # container-internal interpreter frozen in the bindings.
+                if not isinstance(python,str) or not python.startswith('/'):
+                    raise ProtocolError('INVALID_INPUT: existing remote node requires container python')
+                # Everything on this node runs inside its borrowed container:
+                # ssh to the host, then docker exec with the container python.
+                nodes[slot]=SSHNode(plan['task_id'],slot,compiled,identity['bundle_sha256'],
+                                   identity['runtime_sha256'],identity['nonce'],
+                                   python=python,container=container['id'],coordinator_root=root)
+            else:
+                nodes[slot]=SSHNode(plan['task_id'],slot,compiled,identity['bundle_sha256'],
+                                   identity['runtime_sha256'],identity['nonce'],
+                                   python=binding.get('python','/usr/bin/python3'),
+                                   coordinator_root=root)
     if len(local)!=1:
         raise ProtocolError('INVALID_INPUT: runtime must match one reviewed deployment node')
     self_slots=[slot for slot in slots

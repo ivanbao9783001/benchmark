@@ -78,13 +78,29 @@ class PublicationCLITests(unittest.TestCase):
             config={'tasks':{'t':dict(host='host.invalid',root='/work/t',allowed_root='/work',task_root='/deliver/t',self=True)}}
             result=publish(request,config,publisher=publisher,prober=Mock())
             self.assertFalse(result['started'])
-            self.assertEqual(publisher.call_args.kwargs,{'link':'local'})
+            self.assertEqual(publisher.call_args.kwargs,{'link':'local','container':None})
             start=dict(task_ref='t',runtime_sha256='a'*64,bundle_sha256='b'*64,nonce='c'*64)
             transport=Mock()
             start_task(start,config,transport=transport)
             argv=transport.call_args.args[0]
             self.assertEqual(argv[0],'/usr/bin/python3')
             self.assertNotIn('ssh',argv)
+
+    def test_container_tester_is_verified_then_published_via_docker_exec(self):
+        with tempfile.TemporaryDirectory() as folder:
+            request=self.fixture(folder)
+            publisher=Mock(return_value=dict(status='EVENTS'))
+            verifier=Mock(return_value=dict(Id='c'*64,Running=True))
+            config={'tasks':{'t':dict(host='host.invalid',root='/work/t',allowed_root='/work',
+                task_root='/deliver/t',python='/opt/venv/bin/python',
+                container=dict(id='c'*64,image='sha256:'+'e'*64))}}
+            result=publish(request,config,publisher=publisher,prober=Mock(),verifier=verifier)
+            self.assertFalse(result['started'])
+            # One host-side inspection before any upload leaves the control side.
+            verifier.assert_called_once_with('host.invalid','c'*64,'sha256:'+'e'*64,'t')
+            self.assertEqual(publisher.call_args.kwargs,{'link':'container','container':'c'*64})
+            self.assertEqual(publisher.call_args.args[:3],
+                             ('host.invalid','/opt/venv/bin/python','/work/t'))
 
     def test_invalid_digest_or_root_does_not_contact_host(self):
         with tempfile.TemporaryDirectory() as folder:

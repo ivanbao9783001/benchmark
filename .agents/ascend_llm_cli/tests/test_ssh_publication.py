@@ -83,3 +83,31 @@ class UploadTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 receive(target,self.packet(b'abc'))
             self.assertEqual(artifact.read_bytes(),b'xyz')
+
+
+class VerifyContainerTests(unittest.TestCase):
+    def test_inspects_id_image_and_running_state_on_the_host(self):
+        from deploy_eval_v2.ssh_publication import verify_container
+        cid='a'*64; image='sha256:'+'b'*64
+        seen=[]
+        def transport(argv,timeout=30):
+            seen.append(argv)
+            return 0,(cid+'|'+image+'|true\n').encode(),b''
+        result=verify_container('user@host',cid,image,'t',transport=transport)
+        self.assertEqual(result,dict(Id=cid,Image=image,Running=True))
+        self.assertIn('docker inspect',seen[0][-1])
+        self.assertIn(cid,seen[0][-1])
+
+    def test_unavailable_mismatched_or_stopped_containers_are_rejected(self):
+        from deploy_eval_v2.ssh_publication import verify_container
+        from deploy_eval_v2.protocol import ProtocolError
+        cid='a'*64; image='sha256:'+'b'*64
+        cases=[(1,b'',b'No such object: '+cid.encode()),
+               (0,(('c'*64)+'|'+image+'|true\n').encode(),b''),
+               (0,(cid+'|'+image+'|false\n').encode(),b''),
+               (0,(cid+'|sha256:'+('d'*64)+'|true\n').encode(),b'')]
+        for code,output,error in cases:
+            with self.subTest(code=code,output=output):
+                with self.assertRaises(ProtocolError):
+                    verify_container('user@host',cid,image,'t',
+                                     transport=lambda *a,code=code,output=output,error=error,**k:(code,output,error))

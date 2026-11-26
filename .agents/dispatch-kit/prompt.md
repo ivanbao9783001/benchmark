@@ -24,7 +24,8 @@
 3. 交付类产物只落在 `<deliverables.local_dir>/<task.id>`（交付根），运行证据只落在 `<allowed_root>/<task.id>`（节点运行根）；不写仓库根或临时路径。派单未给 `local_dir` 时按缺省 `<当前目录>/deploy-runs` 派生，该目录属于约定交付位置，不算“写仓库根”。
 4. 授权只收紧不扩大：不改 host/devices/allowed_root/model_paths。existing 下不创建、启动、停止或删除容器，self 节点不做 SSH 与 docker inspect/exec；owned 下容器由 CLI 命令创建与删除，不手工执行 docker。不读历史任务目录、归档或回收站。
 5. 从第一条现场/CLI 命令开始，记录命令、原始 stdout/stderr、实际退出码、时间戳，并使用唯一文件名；失败的输出不被覆盖。
-6. 结束时报告四项状态：执行、证据完整性、性能或精度有效性、清理；给出 limitations 与 confidence。部分证据不得写成完整成功。
+6. 每完成一个 CLI 阶段（归一化、校验、冻结、发布、启动、部署、等待事件）就向 `<deliverables.local_dir>/<task.id>/progress.log` 追加一行 `PHASE <阶段> <rc> <耗时秒> <UTC 时间>`；失败同样追加（rc 非 0）。这是外层监控的唯一约定入口，不要依赖对话输出或模型 token 流。
+7. 结束时先运行 `deploy-eval-v2 --config <deliverables.local_dir>/<task.id>/control.json task-summary --task-ref <task.id>`，以它作为交付全景（只读派生，不改状态）；再报告四项状态：执行、证据完整性、性能或精度有效性、清理；给出 limitations 与 confidence。部分证据不得写成完整成功。
 
 完成后只回报：task.id、实际场景 id、四项状态、产物根、以及任何偏离派单的地方。
 ```

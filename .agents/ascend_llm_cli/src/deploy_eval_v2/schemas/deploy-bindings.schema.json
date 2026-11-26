@@ -207,6 +207,11 @@
             "type": "string",
             "pattern": "^[a-f0-9]{32}$"
           },
+          "python": {
+            "type": "string",
+            "pattern": "^/",
+            "description": "Interpreter that launches this node's worker: the host interpreter for owned nodes, the container-internal interpreter for existing nodes."
+          },
           "container": {
             "type": "object",
             "additionalProperties": false,
@@ -376,9 +381,6 @@
               "pattern": "^sha256:[a-f0-9]{64}$"
             }
           }
-        },
-        "host_python": {
-          "$ref": "#/$defs/path"
         },
         "container_work_root": {
           "$ref": "#/$defs/path",

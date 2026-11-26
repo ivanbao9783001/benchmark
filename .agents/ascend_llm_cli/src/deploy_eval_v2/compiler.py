@@ -34,8 +34,9 @@ def verify_review(plan, bindings, review, runtime_digest):
         topology = compile_bound_deployment(plan, bindings)
         if 'evaluation' in plan:
             from .owned_eval import owned_eval_inputs
+            model = plan['deployment']['model']
             owned_eval_inputs(plan,bindings,dict(service_id='reviewed-service',endpoint=topology['endpoint'],
-                                                model=plan['deployment']['model']['served_name'],
+                                                model=model.get('served_name') or model['id'],
                                                 metrics=topology['metric_instances']))
     if isinstance(plan, dict) and plan.get('intent') == 'external_eval':
         from .plan_model import normalize_external_plan, validate_eval_bindings
@@ -131,8 +132,11 @@ def compiled_deployment(plan, bindings):
     # JSON object order is not semantic. Freeze writes canonical key ordering;
     # compile from that same representation so verification produces identical argv.
     topology = compile_bound_deployment(json.loads(canonical(plan)), json.loads(canonical(bindings)))
-    return dict(schema_version='1.0', model=plan['deployment']['model']['served_name'],
-                topology=topology, scripts=compile_service_scripts(topology))
+    model = plan['deployment']['model']
+    # Echo both names so a reviewer can verify the id-to-served mapping without
+    # reconstructing it from argv.
+    return dict(schema_version='1.0', model=model.get('served_name') or model['id'],
+                model_id=model['id'], topology=topology, scripts=compile_service_scripts(topology))
 
 
 def local_command(kind, request):

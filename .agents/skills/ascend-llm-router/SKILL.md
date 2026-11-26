@@ -30,13 +30,14 @@ RUNNING 按游标等待；WAIT_TIMEOUT 不代表失败。结果未知时恢复�
 
 拿到 top_input 后先核对运行时模式与任务形态，再核对字段。派单方（上层主 Agent 或人）如何收齐事实、如何发 prompt，见 [dispatch-kit/README.md](../../dispatch-kit/README.md)；执行方不把示例值当授权，也不把示例值当现场事实。判不出容器归属时停止并报告缺口，不自行创建容器。
 
-派单信息按来源分三类，处理方式不同：
+派单信息按来源分四类，处理方式不同：
 
-- **授权与目标**：谁能做、做什么、边界在哪。只能来自派单方；缺失时一次性列全并停止，这是唯一允许向用户提问的类别。
+- **需求与授权**：要什么（action、拓扑、模型、connector、`on_idle`）、谁能做、边界在哪（节点、设备、`allowed_root`）。只能来自派单方；缺失时一次性列全并停止，这是唯一允许向用户提问的类别。仅 top-input §0.5 的保守白名单（容器只读借用、`keep_service`、两项授权 `false`）可缺省并记 `limitations`。
 - **现场事实**：容器 id 与 image、`network`、`machine_id`、解释器、模型与数据集路径、端口占用。由执行方在容器内或经授权的 SSH 取证后写入，不问。
-- **可推导项**：`task.id`、`root`（节点运行根）、`task_root`（交付根）、bindings、端口分配、`container_work_root`、`deliverables.local_dir`、数据集 `split/scope`、acc 的数据集 id（缺省 `gpqa`，可选 `gsm8k`）、case 参数。按派生表与模板默认值直接采用，不问。
+- **覆盖项**：用户显式给出的 `args`、评测参数优先；未给用模板默认，给了必须进审阅摘要。
+- **可推导项**：`task.id`（未给时）、`root`（节点运行根）、`task_root`（交付根）、bindings、端口分配、`container_work_root`、`deliverables.local_dir`、数据集 `split/scope`、acc 的数据集 id（缺省 `gpqa`，可选 `gsm8k`）、case 参数。按派生表与模板默认值直接采用，不问。
 
-后两类的取值来源写入审阅摘要与最终报告的 `limitations`；不得列入缺口清单或 `unresolved`。
+后三类中采用缺省或派生的取值来源写入审阅摘要与最终报告的 `limitations`；不得列入缺口清单或 `unresolved`。
 
 **先定运行时模式（owned / existing），再定任务形态（action / topology / eval_mode）。** `container.self` 只是 existing 的节点标记（当前所在容器），不是第三种模式；单机 existing 直接在容器内本地执行，双机 PD 只有当前节点写 `self`，另一节点经 SSH + docker。两个判定问题、必填差异与停止规则见派单契约 §0；判不出容器归属就停，不自行创建容器，也不得把 owned 硬套成 existing。`scenarios.json` 只是已有示例的索引，不是支持范围的全部；没有示例的路由按派单契约 §2 与字段契约组装，不得因为找不到示例而改判运行时模式。
 

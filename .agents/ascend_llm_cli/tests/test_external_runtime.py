@@ -62,7 +62,7 @@ class ExternalRuntimeTests(unittest.TestCase):
             with self.assertRaisesRegex(ProtocolError, 'not owned'):
                 restored.submit(command('release', restored.version, 'r', service_id='s'))
 
-    def test_tester_container_matching_the_control_container_is_verified_local(self):
+    def test_tester_container_runs_locally_without_docker(self):
         seen = {}
         def runner(plan, bindings, case_id, folder, cancelled, **kwargs):
             seen.update(kwargs)
@@ -70,30 +70,14 @@ class ExternalRuntimeTests(unittest.TestCase):
         plan, bindings = external_plan(), eval_bindings()
         bindings['testers']['tester']['container'] = {'id': 'c'*64}
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            with patch('deploy_eval_v2.external_executor.DOCKERENV') as inside:
-                inside.exists.return_value = True
-                runtime, _ = self.setup_runtime(root, runner, plan=plan, bindings=bindings)
-                response = API(runtime).submit(command('eval', runtime.version, 'e',
-                                                       service_id='s', case_id='c', wait_ms=1000))
+            runtime, _ = self.setup_runtime(Path(folder), runner, plan=plan, bindings=bindings)
+            response = API(runtime).submit(command('eval', runtime.version, 'e',
+                                                   service_id='s', case_id='c', wait_ms=1000))
             self.assertEqual(response['events'][-1]['type'], 'evaluation.completed')
-        self.assertEqual(seen['verified_local_container'], 'c'*64)
-
-    def test_host_control_does_not_claim_a_local_tester_container(self):
-        seen = {}
-        def runner(plan, bindings, case_id, folder, cancelled, **kwargs):
-            seen.update(kwargs)
-            return dict(execution_status='SUCCEEDED', evidence_status='PARTIAL', performance_validity='UNVERIFIED')
-        plan, bindings = external_plan(), eval_bindings()
-        bindings['testers']['tester']['container'] = {'id': 'c'*64}
-        with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
-            with patch('deploy_eval_v2.external_executor.DOCKERENV') as inside:
-                inside.exists.return_value = False
-                runtime, _ = self.setup_runtime(root, runner, plan=plan, bindings=bindings)
-                API(runtime).submit(command('eval', runtime.version, 'e',
-                                            service_id='s', case_id='c', wait_ms=1000))
-        self.assertIsNone(seen['verified_local_container'])
+        # Container testers execute inside their container; the coordinator no
+        # longer selects docker and passes no container hint.
+        self.assertEqual(seen['verified_local_host'], bindings['testers']['tester']['host'])
+        self.assertNotIn('verified_local_container', seen)
 
     def test_invalid_case_never_accepted(self):
         with tempfile.TemporaryDirectory() as folder:

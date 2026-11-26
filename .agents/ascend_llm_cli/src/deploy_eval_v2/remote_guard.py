@@ -1,7 +1,10 @@
-"""Host-global persistent claims and journaled command identities.
+"""Persistent claims and journaled command identities at one execution site.
 
-All v2 tasks on a physical host must use the same guard root. Claims survive
-process crashes; absence of a live process is never sufficient to remove them.
+All v2 tasks sharing an execution site must use the same guard root. For owned
+nodes that site is the host; for existing nodes it is the borrowed container,
+which is global to the whole container because there is one container per host.
+Claims survive process crashes; absence of a live process is never sufficient
+to remove them.
 """
 from contextlib import contextmanager
 import hashlib

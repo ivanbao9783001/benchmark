@@ -18,10 +18,11 @@
 | `task.action` / `task.eval_mode` | `deploy_and_eval` / `acc` |
 | `task.on_idle` | `release_owned` 或 `keep_service` |
 | `nodes.<id>.container` / `container_work_root` | 借用容器的 ID、镜像摘要与容器内可写根 |
+| `nodes.<id>.python` | 容器内解释器绝对路径；bindings 与 control.json 同值，node_worker 由它启动 |
 | `nodes.<id>.container.self` | `true`（单机唯一节点；表示当前就在该容器内） |
 | `nodes.<id>.network` | `{ip, interface}` |
 | `deployment.instances` | 1 个 `mixed`，`ports` 只写 `http` |
-| `evaluation.tester` | 同 perf 的必填字段，另加实际数据集条目 `datasets.<id>`；容器内测试再加 `container` 与 `container_work_root` |
+| `evaluation.tester` | 同 perf 的必填字段，另加实际数据集条目 `datasets.<id>`；`container` 与 `container_work_root` 必填 |
 | `evaluation.dataset` | `{id, split, scope}`，必须与 `datasets` 中的键一致 |
 | 不写 | `evaluation.service`、`deployment.image` |
 

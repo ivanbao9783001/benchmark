@@ -60,7 +60,8 @@ class ExecutorFactoryTests(unittest.TestCase):
                     deployment={'runtime':{'mode':'existing_container'}}),
                 'bindings.json':dict(nodes={
                     'a':dict(machine_id='d'*32,container=dict(id='c'*64,image='sha256:'+'e'*64)),
-                    'b':dict(machine_id='f'*32,container=dict(id='1'*64,image='sha256:'+'2'*64,self=True))}),
+                    'b':dict(machine_id='f'*32,python='/opt/venv/bin/python',
+                             container=dict(id='1'*64,image='sha256:'+'2'*64,self=True))}),
                 'compiled.json':{'topology':{'groups':{
                     'a/model':{'node':'a','root':root},
                     'b/model':{'node':'b','host':'remote.invalid','root':'/remote/t'}}}}}
@@ -69,8 +70,39 @@ class ExecutorFactoryTests(unittest.TestCase):
              patch('deploy_eval_v2.executor_factory.verify_frozen',return_value=values),\
              patch('deploy_eval_v2.executor_factory.HostGuard'),\
              patch('deploy_eval_v2.executor_factory.OwnedExecutor'):
-            with self.assertRaisesRegex(ProtocolError,'self container node must be the local node'):
+            with self.assertRaisesRegex(ProtocolError,'local existing node must be the self container'):
                 build_executor(root,dict(identity(),node_root=root),machine_id_reader=lambda:'d'*32)
+
+    def test_remote_existing_node_uses_docker_exec_with_container_python(self):
+        root=str(Path('/work/t'))
+        cid='1'*64
+        values={'plan.json':dict(task_id='t',intent='deploy',execution={'max_retries':0},
+                    deployment={'runtime':{'mode':'existing_container'}}),
+                'bindings.json':dict(nodes={
+                    'a':dict(machine_id='d'*32,python='/usr/bin/python3',
+                             container=dict(id='c'*64,image='sha256:'+'e'*64,self=True)),
+                    'b':dict(machine_id='f'*32,python='/opt/venv/bin/python',
+                             container=dict(id=cid,image='sha256:'+'2'*64))}),
+                'compiled.json':{'topology':{'groups':{
+                    'a/model':{'node':'a','root':root,'self':True,
+                               'container':{'id':'c'*64,'image':'sha256:'+'e'*64}},
+                    'b/model':{'node':'b','host':'remote.invalid','root':'/remote/t',
+                               'container':{'id':cid,'image':'sha256:'+'2'*64}}}}}}
+        with patch('deploy_eval_v2.executor_factory.validate_identity'),\
+             patch('deploy_eval_v2.executor_factory.verify_runtime'),\
+             patch('deploy_eval_v2.executor_factory.verify_frozen',return_value=values),\
+             patch('deploy_eval_v2.executor_factory.HostGuard'),\
+             patch('deploy_eval_v2.executor_factory.OwnedExecutor') as factory:
+            build_executor(root,dict(identity(),node_root=root),machine_id_reader=lambda:'d'*32)
+            from deploy_eval_v2.self_container_node import SelfContainerNode
+            from deploy_eval_v2.ssh_node import SSHNode
+            nodes=factory.call_args.args[4]
+            self.assertIsInstance(nodes['a'],SelfContainerNode)
+            self.assertIsInstance(nodes['b'],SSHNode)
+            self.assertEqual(nodes['b'].container,cid)
+            joined=' '.join(nodes['b'].argv)
+            self.assertIn('docker exec -i '+cid,nodes['b'].argv[-1])
+            self.assertIn('/opt/venv/bin/python',joined)
 
     def test_external_host_attestation_required_before_executor_construction(self):
         plan=external_plan()

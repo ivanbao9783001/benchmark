@@ -2,13 +2,13 @@
 
 三种根必须区分：交付根 `task_root = deliverables.local_dir/task_id`（控制机，放 plan/bindings/compiled 的审阅与冻结产物）；节点运行根 `node_root = work_dir/task_id`（每个节点，放 runtime/inputs/状态/日志/原始 results）；existing 的容器运行根 `container_root = container_work_root/task_id`（脚本、日志与原始 results 在容器内）。plan/bindings/compiled 只记录 `work_dir`、`container_work_root` 与 `task_id`，不记录 `task_root`；编译器用前两者派生运行根。
 
-The accompanying schemas define deploy-plan, deploy-bindings, external-eval-plan and eval-bindings. Review and freezing perform schema and semantic validation, compile topology and scripts, and bind all input and runtime digests. These local checks do not prove host readiness.
+随附 schema 定义 deploy-plan、deploy-bindings、external-eval-plan 与 eval-bindings。审阅与冻结执行 schema 与语义校验，编译拓扑与脚本，并绑定全部输入与 runtime 摘要；这些本地检查不证明宿主就绪。
 
-Deploy plans for either container mode (owned_container or existing_container) may contain evaluation {cases, test_binding}; deploy bindings then include testers. Each tester binds host, machine_id, work_root, python, aisbench, model_path and datasets. Native synthetic datasets use type=aisbench_synthetic. Explicit load values are preserved; defaults must be resolved before review.
+两种容器模式的 deploy plan（`owned_container` 或 `existing_container`）都可以内嵌 `evaluation{cases, test_binding}`，此时 deploy bindings 包含 testers。每个 tester 绑定 host、machine_id、work_root、python、aisbench、model_path 与 datasets；原生合成数据集用 `type=aisbench_synthetic`。显式负载值原样保留，默认值必须在审阅前解析成具体值。
 
-Optional tester.environment is a map of explicit environment variable strings applied to preflight, AISBench and postflight subprocesses. No shell expansion occurs. Freeze actual absolute paths, not $VARIABLE expressions. Discover required CANN environment from the selected installed toolkit using read-only checks; validate imports under those values before deployment. Do not install or upgrade a user's environment to resolve missing libraries. Record chosen toolkit, environment values and import evidence. Never infer that an executable's presence means its imports work. Environment values must not contain secrets, since frozen inputs and evidence retain them.
+可选的 `tester.environment` 是显式环境变量字符串映射，作用于 preflight、AISBench 与 postflight 子进程，不做 shell 展开；冻结真实绝对路径，不写 `$VARIABLE`。所需 CANN 环境用只读检查从所选已安装工具链中发现，并在部署前用这些值验证导入。不得为补齐缺失库而安装或升级用户环境。记录所选工具链、环境值与导入证据；绝不因可执行文件存在就推断导入可用。环境值不得包含密钥，因为冻结输入与证据会保留它们。
 
-Production preflight checks interpreter and console entrypoint ownership, tokenizer assets, config imports and dataset capability. Explicit authorized cache reset requires frozen per-instance targets; never infer these from the service URL. Execution and evidence/performance validity remain separate outcomes.
+生产预检检查解释器与控制台入口归属、tokenizer 资产、配置导入与数据集能力。显式获授权的缓存重置需要冻结的逐实例目标，绝不从服务 URL 推断。执行结果与证据/性能有效性是彼此独立的结论。
 
 ## bindings 的端口形状
 
@@ -37,7 +37,7 @@ Production preflight checks interpreter and console entrypoint ownership, tokeni
 
 ## 容器内测试工具
 AISBench 可位于宿主或已有运行容器。宿主未找到工具时，继续只读检查已有容器的工具、解释器、依赖、tokenizer和网络；不要要求用户重复提供可自行发现的绑定。
-容器 tester 在原有 host/work_root/machine_id 字段之外设置 container={"id":"完整64位容器ID","image":"sha256:完整镜像摘要"}；`self` 节点可省略 `image`，非 self 节点仍须给出摘要；python、aisbench、model_path、environment、datasets 路径均属于容器内环境。`machine_id` 在容器内运行 `deploy-eval-v2 identity` 取证（优先 `/etc/machine-id`，为空时用 hostname 派生）。host_python（默认按 contract 的探测顺序取已核验解释器，Python>=3.11 且能 import jsonschema）和 control.json 的 python 属于宿主，用于框架，不要求容器安装框架依赖。work_root 是已授权宿主工作根，执行器在容器同路径下建立独立操作目录，通过公开CLI发布工具代码与收回原生产物，不要求已有容器挂载该目录。若容器没有把 work_root 暴露在同一路径（例如宿主 /home/u 挂载为容器 /workspace），再加 container_work_root 声明容器内操作根；此时只有 work_root/control.json/host_python 用宿主路径，其余 tester 路径仍用容器内路径。container_work_root 只能与 container 同时出现，必须是容器内绝对路径且不含 `:`。它可以是容器内独立目录（如 /tmp/de-eval-tester，执行器在容器内建目录、跑完回传），也可以恰好与宿主 work_root 是同一 bind mount；后者两侧看到同一物理目录，不要假定容器目录必然不存在。
+容器 tester 与部署节点同规则，**existing 全容器内闭环**：设置 `container={"id":"完整64位容器ID","image":"sha256:完整镜像摘要"}`（`self` 节点可省略 `image`，非 self 节点仍须给出摘要）与 `container_work_root`；`work_root`、`python`、`aisbench`、`model_path`、`environment`、`datasets`、`machine_id` 全部按容器内取值；worker 解释器取 `python`（容器内值）。`work_root` 是容器内工作根，执行器在容器内建立任务目录，不要求容器挂载宿主目录；`container_work_root` 是容器内操作根，允许不存在，由执行器创建，派生时取 `work_root`。`machine_id` 在容器内运行 `deploy-eval-v2 identity` 取证（优先 `/etc/machine-id`，为空时用 hostname 派生）。owned 场景 tester 在宿主：不写 `container` 与 `container_work_root`，`python/aisbench/model_path/datasets/machine_id` 按宿主取值。未声明 tester 时默认控制节点（existing 即控制容器，owned 即控制机）。container_work_root 只能与 container 同时出现，必须是容器内绝对路径且不含 `:`。它可以是容器内独立目录（如 /tmp/de-eval-tester，执行器在容器内建目录、跑完回传）。
 冻结前 docker inspect 核对完整ID、镜像、运行状态；只读检查容器内Python、AISBench版本及依赖、权重可见性、被测endpoint从容器可达。工具存在不代表依赖完整。使用公开CLI执行，不手写docker exec负载封装。容器仅提供测试环境，不授予停止、重启、删除容器或被测服务的权限。执行器只停止本任务工具进程组；证据回收失败或清理未知必须报告，不能标记完整。
 
 ## 服务健康路径
@@ -52,4 +52,4 @@ AISBench 可位于宿主或已有运行容器。宿主未找到工具时，继�
 5. `work_dir`、`model_paths`、`paths`、`network` 均为容器内可见值；`self` 节点本地核对。
 6. 发布前确认目标未被其它任务占用；结果未知时用同一请求身份恢复查询，不新开目录盲重跑。
 7. 冻结前后的 `check-ready` 阻断项已逐条消除；`guard_root` 不存在不是阻塞，但必须位于可写位置。
-8. tester 的 `machine_id`、`host_python`、`container_work_root` 与执行位置一致；`self` 节点走本地 tester。
+8. tester 的 `machine_id`、`container`、`container_work_root` 与执行位置一致：existing 在容器内、owned 在宿主；未声明 tester 时默认控制节点；existing 的 tester 必须是控制节点同一容器（控制机场景）。

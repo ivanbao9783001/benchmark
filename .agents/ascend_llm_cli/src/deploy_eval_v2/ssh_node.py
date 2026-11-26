@@ -4,13 +4,14 @@ import time
 from .compiler import digest
 from .protocol import ProtocolError
 from .process_guard import remaining,Cancelled
-from .ssh_transport import exchange,ssh_argv
+from .ssh_transport import container_argv,exchange,ssh_argv
 
 
 class SSHNode:
     remote=True
 
-    def __init__(self,task_id,node,compiled,bundle_digest,runtime_digest,token,python='/usr/bin/python3',transport=exchange,coordinator_root=None):
+    def __init__(self,task_id,node,compiled,bundle_digest,runtime_digest,token,python='/usr/bin/python3',
+                 container=None,transport=exchange,coordinator_root=None):
         self.task_id,self.node=task_id,node
         self.groups={k:g for k,g in compiled['topology']['groups'].items() if g['node']==node}
         if not self.groups:
@@ -20,9 +21,16 @@ class SSHNode:
         self.bundle_digest,self.runtime_digest,self.token=bundle_digest,runtime_digest,token
         self.transport=transport
         self.coordinator_root=coordinator_root
+        # A borrowed container is reached through its host: docker exec -i.
+        # Owned nodes keep the fixed host interpreter on the plain SSH path.
+        self.container=container
         # No shell config/body interpolation; ssh_argv quotes each argument.
         bootstrap='import sys; sys.path.insert(0, '+repr(self.root+'/runtime')+'); from deploy_eval_v2.node_worker import main; raise SystemExit(main())'
-        self.argv=ssh_argv(self.host,[python,'-B','-c',bootstrap,'--root',self.root])
+        remote=[python,'-B','-c',bootstrap,'--root',self.root]
+        if container:
+            self.argv=container_argv(self.host,container,remote)
+        else:
+            self.argv=ssh_argv(self.host,remote)
         self.guard=_RemoteGuard(self)
 
     def _call(self,action,command_id,deadline,cancelled,**fields):
@@ -33,7 +41,8 @@ class SSHNode:
             command_id=command_id,runtime_sha256=self.runtime_digest,bundle_sha256=self.bundle_digest,
             token=self.token,timeout_seconds=seconds,**fields)
         try:
-            response=self.transport(self.argv,request,timeout=seconds,cancelled=cancelled)
+            response=self.transport(self.argv,request,timeout=seconds,cancelled=cancelled,
+                                    container=bool(self.container))
         finally:
             if self.coordinator_root is not None and action not in ('log-page','log-ack'):
                 from .log_transfer import collect

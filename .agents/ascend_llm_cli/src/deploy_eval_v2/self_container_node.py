@@ -1,12 +1,13 @@
-"""Borrow the container the control process itself runs in.
+"""Borrow the container this worker process runs in.
 
-Selected only for the reviewed node whose container is flagged ``self``: the
-runtime is already inside the borrowed container, so neither SSH nor docker is
-available. Every effect mirrors ``ExistingContainerNode`` with local processes
-instead of docker exec: the container is never created, started, stopped or
-removed and no container file is deleted. Release stops exactly the process
-groups this task started, recognised by an execution marker in the leader's
-environment.
+Used for every existing node: the control container runs this adapter locally,
+and each remote node runs the same adapter inside its own container after
+``ssh <host> docker exec -i <container> <python>``. The runtime is therefore
+already inside the borrowed container, so neither SSH nor docker is available.
+Every effect mirrors ``ExistingContainerNode`` with local processes instead of
+docker exec: the container is never created, started, stopped or removed and no
+container file is deleted. Release stops exactly the process groups this task
+started, recognised by an execution marker in the leader's environment.
 """
 import os
 from pathlib import Path
@@ -29,6 +30,8 @@ class SelfContainerNode(ExistingContainerNode):
     self_container = True
 
     def _require_inside(self):
+        # docker exec enters the container's namespaces, so /.dockerenv is the
+        # same evidence for a remote node's container and for the control one.
         if not DOCKERENV.exists():
             raise ProtocolError('INVALID_INPUT: self container evidence unavailable')
 

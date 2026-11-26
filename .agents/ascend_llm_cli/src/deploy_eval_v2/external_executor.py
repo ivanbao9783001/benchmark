@@ -10,19 +10,6 @@ from .process_guard import Cancelled
 from .protocol import ProtocolError
 from .result_contract import evaluation_result
 
-DOCKERENV = Path('/.dockerenv')
-
-
-def local_container_id(tester):
-    """The tester container when the coordinator itself runs inside it.
-
-    ``build_executor`` has already bound ``tester.machine_id`` to this machine, so
-    a declared container plus ``/.dockerenv`` means docker must not be used:
-    inside the borrowed container there is no docker daemon.
-    """
-    container = tester.get('container')
-    return container['id'] if isinstance(container, dict) and DOCKERENV.exists() else None
-
 
 def persist(path, value):
     raw = canonical(value)
@@ -80,11 +67,9 @@ class ExternalExecutor:
         data = dict(service_id=self.service_id, case_id=command['case_id'],
                     result_ref=evidence.relative_to(self.root).as_posix())
         try:
-            tester = values['bindings.json']['testers'][values['plan.json']['test_binding']]
             result = self.case_runner(values['plan.json'], values['bindings.json'], command['case_id'],
                                       operation_root/'benchmark', cancelled,
-                                      verified_local_host=self.verified_host,
-                                      verified_local_container=local_container_id(tester))
+                                      verified_local_host=self.verified_host)
             result=evaluation_result(result,task_id=self.task_id,operation_id=operation,
                 service_id=self.service_id,case_id=command['case_id'])
             data['result_sha256'] = persist(evidence, result)

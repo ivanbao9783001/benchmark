@@ -1,7 +1,9 @@
 """One SSH node command, constrained to a verified frozen task and runtime.
 
-This process is not another task coordinator. Effects use the host guard and
-owned containers; interrupted replies never authorize re-execution.
+This process is not another task coordinator. Effects use the guard and the
+container the worker runs in: owned nodes act on host-owned containers, while
+existing nodes act only inside their borrowed container (one per host).
+Interrupted replies never authorize re-execution.
 """
 import argparse
 import json
@@ -12,7 +14,7 @@ import threading
 import time
 from .compiler import verify_frozen
 from .docker_node import DockerNode
-from .existing_container_node import ExistingContainerNode
+from .self_container_node import SelfContainerNode
 from .durable import atomic_json
 from .json_io import unique_object,reject_constant,load_json
 from .protocol import ProtocolError,encode,envelope
@@ -51,8 +53,10 @@ def dispatch(root,request,*,guard_root=None,node_factory=DockerNode):
     if existing and any('container_root' not in g for g in groups.values()):
         raise ProtocolError('INVALID_INPUT: existing container compilation')
     if node_factory is DockerNode and existing:
-        node_factory=ExistingContainerNode
-    if node_factory in (DockerNode,ExistingContainerNode):
+        # existing means one container per host: every node command already
+        # runs inside that borrowed container, so the adapter is local.
+        node_factory=SelfContainerNode
+    if node_factory in (DockerNode,SelfContainerNode):
         from .executor_factory import local_machine_id
         if values['bindings.json']['nodes'][request['node']].get('machine_id')!=local_machine_id():
             raise ProtocolError('INVALID_INPUT: remote node machine identity mismatch')
@@ -81,7 +85,7 @@ def dispatch(root,request,*,guard_root=None,node_factory=DockerNode):
             raise ProtocolError('INVALID_INPUT: node binding missing')
         guard_root=resolve_guard_root(binding,str(root))
     guard=HostGuard(guard_root,request['task_id'],request['token'])
-    if node_factory is ExistingContainerNode:
+    if node_factory is SelfContainerNode:
         node=node_factory(guard,values['bindings.json']['nodes'][request['node']].get('container'))
     else:
         node=node_factory(guard)

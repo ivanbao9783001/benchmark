@@ -96,6 +96,8 @@ def check_ready(request,config):
         identities=[machine(bound['nodes'][slot]) for slot in slots]
         require(all(identities),'NODE_MACHINE_ID_REQUIRED')
         require(len(set(identities))==len(identities),'NODE_MACHINE_IDS_MUST_BE_DISTINCT')
+        hosts=[next(g['host'] for g in groups.values() if g['node']==slot) for slot in slots]
+        require(len(set(hosts))==len(hosts),'DUPLICATE_NODE_HOST')
         for slot in slots:
             guard_root=bound['nodes'][slot].get('guard_root')
             if guard_root is None:
@@ -122,6 +124,16 @@ def check_ready(request,config):
                   and 'device_id_map' in bound['nodes'][slot]['container']}
         deployment=plan.get('deployment',{})
         existing=(deployment.get('runtime',{}).get('mode','owned_container')=='existing_container')
+        if existing:
+            # One container per host: every node carries its own container. A
+            # remote node also needs its container-internal interpreter; the
+            # self node runs in-process and needs none.
+            for slot in slots:
+                container=bound['nodes'][slot].get('container')
+                require(isinstance(container,dict),'EXISTING_CONTAINER_REQUIRED')
+                if not (isinstance(container,dict) and container.get('self') is True):
+                    python=bound['nodes'][slot].get('python')
+                    require(isinstance(python,str) and python.startswith('/'),'EXISTING_NODE_PYTHON_REQUIRED')
         devices=node_physical_devices(deployment) if deployment.get('instances') else {}
         if declared:
             require(existing,'DEVICE_ID_MAP_INVALID')
@@ -157,17 +169,22 @@ def check_ready(request,config):
         if evaluation:
             tester=bound['testers'][evaluation['test_binding']]
             require(machine(tester) is not None,'TESTER_MACHINE_ID_REQUIRED')
-            if self_slots and machine(tester)==machine(bound['nodes'][self_slots[0]]):
-                # Evaluations on the control machine run inside the control
-                # container: docker is absent there, so the tester identity must
-                # designate that same container.
-                local_node=bound['nodes'][self_slots[0]]
-                container=tester.get('container')
-                require(isinstance(container,dict)
-                        and container.get('id')==local_node['container'].get('id')
+            container=tester.get('container')
+            if existing:
+                # A container tester must be the container of the node on the
+                # same host; there is exactly one container per host, so this
+                # also pins the tester to that host's node container.
+                matches=[slot for slot in slots
+                         if next(g['host'] for g in groups.values() if g['node']==slot)==tester['host']]
+                require(len(matches)==1,'TESTER_CONTAINER_MISMATCH')
+                node=bound['nodes'][matches[0]] if len(matches)==1 else {}
+                require(isinstance(container,dict) and isinstance(node.get('container'),dict)
+                        and container.get('id')==node['container'].get('id')
                         and ('image' not in container
-                             or container.get('image')==local_node['container'].get('image')),
-                        'TESTER_SELF_CONTAINER_MISMATCH')
+                             or container.get('image')==node['container'].get('image')),
+                        'TESTER_CONTAINER_MISMATCH')
+            elif isinstance(container,dict):
+                require(False,'TESTER_CONTAINER_FORBIDDEN')
     else:
         require(False,'INTENT_UNSUPPORTED')
     result=envelope(task,0,'ERROR' if blockers else 'EVENTS')

@@ -54,6 +54,21 @@ class RemoteEvaluationTests(unittest.TestCase):
                 self.invoke(self.adapter(transport),folder,flag)
         self.assertNotIn('cancelled',transport.call_args.kwargs)
 
+    def test_container_tester_runs_inside_the_container(self):
+        result=dict(execution_status='SUCCEEDED',evidence_status='PARTIAL',performance_validity='UNVERIFIED')
+        transport=Mock(return_value=dict(status='EVENTS',operation_id='op',result=result,
+                                         result_sha256=digest(result)))
+        cid='e'*64
+        tester=dict(host='tester',python='/opt/venv/bin/python',work_root='/tests',
+                    machine_id='a'*32,container=dict(id=cid,image='sha256:'+'f'*64))
+        adapter=RemoteEvaluation('t',tester,'b'*64,'c'*64,'d'*64,transport=transport)
+        self.assertIn('docker exec -i '+cid,adapter.argv[-1])
+        self.assertIn('/opt/venv/bin/python',adapter.argv[-1])
+        with tempfile.TemporaryDirectory() as folder:
+            value=self.invoke(adapter,folder)
+        self.assertEqual(value['execution_status'],'SUCCEEDED')
+        self.assertTrue(transport.call_args.kwargs['container'])
+
 
 class TesterWorkerTests(unittest.TestCase):
     def request(self,action='run'):

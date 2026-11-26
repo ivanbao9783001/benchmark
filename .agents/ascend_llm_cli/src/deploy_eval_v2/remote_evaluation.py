@@ -5,7 +5,7 @@ from .hashes import digest
 from .durable import atomic_json
 from .protocol import ProtocolError
 from .process_guard import Cancelled
-from .ssh_transport import exchange,ssh_argv
+from .ssh_transport import container_argv,exchange,ssh_argv
 
 
 class RemoteEvaluation:
@@ -14,12 +14,19 @@ class RemoteEvaluation:
         self.bundle_digest,self.runtime_digest,self.token=bundle_digest,runtime_digest,token
         self.root=str(PurePosixPath(tester['work_root'])/task_id)
         bootstrap='import sys; sys.path.insert(0, '+repr(self.root+'/runtime')+'); from deploy_eval_v2.tester_worker import main; raise SystemExit(main())'
-        self.argv=ssh_argv(tester['host'],[tester.get('host_python', '/usr/bin/python3') if 'container' in tester else tester['python'],'-B','-c',bootstrap,'--root',self.root])
+        # A container tester runs inside its container: ssh + docker exec with
+        # the container interpreter. host_python never participates.
+        container=tester.get('container')
+        self.container=isinstance(container,dict) and isinstance(container.get('id'),str)
+        remote=[tester['python'],'-B','-c',bootstrap,'--root',self.root]
+        if self.container:
+            self.argv=container_argv(tester['host'],container['id'],remote)
+        else:
+            self.argv=ssh_argv(tester['host'],remote)
         self.transport=transport
         self.coordinator_root=coordinator_root
 
-    def __call__(self,plan,bindings,case_id,folder,cancelled,*,verified_local_host,
-                 verified_local_container=None):
+    def __call__(self,plan,bindings,case_id,folder,cancelled,*,verified_local_host):
         result=None
         try:
             result=self._execute(plan,bindings,case_id,folder,cancelled,verified_local_host=verified_local_host)
@@ -35,7 +42,7 @@ class RemoteEvaluation:
                 def transfer(action,**fields):
                     request=dict(protocol_version='1.0',task_id=self.task_id,operation_id=operation,case_id=case_id,
                         runtime_sha256=self.runtime_digest,bundle_sha256=self.bundle_digest,token=self.token,action=action,**fields)
-                    response=self.transport(self.argv,request,timeout=remaining(deadline))
+                    response=self.transport(self.argv,request,timeout=remaining(deadline),container=self.container)
                     if response.get('status')!='EVENTS' or response.get('operation_id')!=operation:
                         raise ProtocolError('UNKNOWN_OUTCOME: tester log response')
                     return response['result']
@@ -56,7 +63,7 @@ class RemoteEvaluation:
         request=dict(protocol_version='1.0',task_id=self.task_id,operation_id=operation,case_id=case_id,
             runtime_sha256=self.runtime_digest,bundle_sha256=self.bundle_digest,token=self.token,action='run')
         try:
-            response=self.transport(self.argv,request,timeout=min(86400,case['timeout_seconds']+30),cancelled=cancelled)
+            response=self.transport(self.argv,request,timeout=min(86400,case['timeout_seconds']+30),cancelled=cancelled,container=self.container)
             if response.get('status')=='ERROR':
                 raise ProtocolError(response['error']['code'])
             result=response.get('result')
@@ -67,7 +74,7 @@ class RemoteEvaluation:
             # An interrupted observer is not proof the remote client stopped.
             # Explicitly stop the exactly identified unit before service cleanup.
             try:
-                stopped=self.transport(self.argv,dict(request,action='cancel'),timeout=30)
+                stopped=self.transport(self.argv,dict(request,action='cancel'),timeout=30,container=self.container)
                 if stopped.get('status')!='EVENTS' or stopped.get('cleanup_status')!='VERIFIED':
                     raise ProtocolError('RECOVERY_REQUIRED: remote tester stop unverified')
             except Exception as cleanup_error:
