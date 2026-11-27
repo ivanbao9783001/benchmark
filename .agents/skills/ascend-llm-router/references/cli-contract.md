@@ -54,7 +54,7 @@ python -m deploy_eval_v2 --config control.json task-summary --task-ref task-1
 
 - `task`：action、topology、runtime_mode、`model`/`model_id`、endpoint、connector、节点（container、npu、ports、`device_map`）。
 - `state`：`source=get-status|unavailable|none`；取不到状态时仍返回成功，并在 `limitations` 留痕。
-- `phases`：固定阶段名；有 `progress.log` 心跳时以心跳 rc 为准，否则取 `results/<op>/stage-result.json` 的产物状态，两者都没有记 `unknown`；`detail.source` 标明来源。
+- `phases`：固定阶段名；有 `progress.log` 心跳时以心跳 rc 为准，否则取 `results/<op>/stage-result.json` 的产物状态，两者都没有记 `unknown`；动作本身不经过的阶段记 `not_applicable`（如 `eval_only` 的 `deploy`/`release`、`deploy_only` 的 `eval`），`detail.source=action`。
 - `operations`：deploy / eval / release 的摘要与证据引用；`service`、`evaluation`、`cleanup` 是从中提取的投影。
 - `limitations`：冻结缺失、状态不可达、心跳缺失等。
 

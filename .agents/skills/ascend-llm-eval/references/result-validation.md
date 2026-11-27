@@ -59,6 +59,9 @@ that bound does not reject the load or truncate native evidence, but leaves stea
 performance UNVERIFIED. Missing timestamps (including versions storing them only
 in another format), unsupported summary formats, inconsistent values and short
 windows carry explicit reasons. No fabricated fallback metrics are emitted.
+This steady rule is AISBench #464 (tag `v3.1-20260820-master`) and later; older
+`3.1.0` builds still use the `WAVE_OFFSET` window and fail as
+`SUMMARY_TIMING_MISMATCH`, so the tag floor is a hard prerequisite, not a nicety.
 
 The observed format/semantics reference is AISBench/benchmark commit
 aff1554354fbf19dccbdf2199cc3c22119f815a2:

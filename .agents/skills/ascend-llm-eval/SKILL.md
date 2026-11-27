@@ -30,13 +30,13 @@ evaluation.completed 仅表示阶段结束。按结果决定下一 case 或收�
 ## 容器内测试工具
 AISBench 可位于宿主或已有运行容器；宿主未找到工具时继续只读检查已有容器的工具、解释器、依赖、tokenizer 与网络，不要求用户重复提供可自行发现的绑定。服务节点为 `container.self=true` 且 tester 的 `machine_id` 等于本机时，测试在当前容器内本地执行，不经 SSH 或 `ContainerTester`（判定见 [remote-tester.md](references/remote-tester.md)）。tester 的容器归属、路径与取值规则以 plan 的 [plan-contract.md](../ascend-llm-plan/references/plan-contract.md#容器内测试工具) 为唯一来源，本阶段不重述。
 
-本阶段只负责执行边界：按冻结前核验结果复核容器身份，并只读确认 endpoint 从容器可达、AISBench 依赖完整（工具存在不代表依赖完整）。使用公开CLI执行，不手写docker exec负载封装。容器仅提供测试环境，不授予停止、重启、删除容器或被测服务的权限。执行器只停止本任务工具进程组；证据回收失败或清理未知必须报告，不能标记完整。
+本阶段只负责执行边界：按冻结前核验结果复核容器身份，并只读确认 endpoint 从容器可达、AISBench 依赖完整（须来自 tag ≥ `v3.1-20260820-master`；仅 3.1.0 版本号不够，旧 tag 稳态统计口径与本 CLI 不一致；工具存在不代表依赖完整）。使用公开CLI执行，不手写docker exec负载封装。容器仅提供测试环境，不授予停止、重启、删除容器或被测服务的权限。执行器只停止本任务工具进程组；证据回收失败或清理未知必须报告，不能标记完整。
 
 ## 服务健康路径
 模型与代理健康路由必须分别从本轮参考或实际接口确认，不统一套用`/health`；deploy 实例的 `checks.health` 绑定各自路径，`service.json` 携带入口 `health_path`，部署后的 eval 沿用该路径。独立 `prepare-inputs(stage=eval)` 允许 `health_path` 字段，与 endpoint 同源；默认 `/health` 只适用于已确认提供该路由的服务。仅设置健康路径不授予服务管理权限；AISBench 预检也从容器实际测试环境访问同一路由。
 
 ## 有效性与日志归集
-普通原生性能case没有shared_prefix_ratio时，性能有效性由原生请求记录、负载和性能汇总证据决定；附加prefix指标保留各自验证状态，不作为普通case的必需门槛。有shared_prefix_ratio时仍须核验数据、前缀指标、路由和预热覆盖，不因普通case规则放宽。原生合成input_tokens是工具配置目标；实际重新分词长度另列synthetic-evidence，不把目标长度冒充实测长度，不自行改造合成数据。目标与实测并列展示，长度偏差只作诊断、不作为通过门槛（synthetic的exact标记同理）；有shared_prefix_ratio时按实测前缀覆盖判定；锚与候选对比时以实测输入长度均值判断负载是否可比。
+普通原生性能case没有shared_prefix_ratio、或显式写 0 时，性能有效性由原生请求记录、负载和性能汇总证据决定；附加prefix指标保留各自验证状态，不作为普通case的必需门槛。shared_prefix_ratio>0 时仍须核验数据、前缀指标、路由和预热覆盖，不因普通case规则放宽。原生合成input_tokens是工具配置目标；实际重新分词长度另列synthetic-evidence，不把目标长度冒充实测长度，不自行改造合成数据。目标与实测并列展示，长度偏差只作诊断、不作为通过门槛（synthetic的exact标记同理）；shared_prefix_ratio>0 时按实测前缀覆盖判定；锚与候选对比时以实测输入长度均值判断负载是否可比。
 
 本地tester（含同宿主容器tester）的case目录为results/<eval operation_id>/benchmark，原生AISBench控制台日志是该目录/aisbench.log；原生summary/details/worker日志由该目录/validated.json和performance-evidence.json中的引用定位，逐一归集。不要误读logs/aisbench.log。preflight.log、postflight.log、container.log是case目录下的框架诊断文件，内容同时按source标签汇入task.jsonl；task.jsonl中出现标签不等于对应文件已归集，容器与远端场景按回传证据核验。JSON证据preflight.json、synthetic-evidence.json等仍在case目录。服务原生日志为logs/<instance>.service.log。远端tester使用响应的remote_evidence定位，不能把主机路径猜为本地路径。
 

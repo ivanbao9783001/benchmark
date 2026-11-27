@@ -10,7 +10,7 @@
 
 控制端 Python >=3.11，安装本目录构建出的 wheel（自动安装 jsonschema）。
 所有远端 runtime/node Python 同样需要 jsonschema；代码发布只发布本包，
-不会自动安装第三方依赖。测试端另需计划指定的 AISBench、数据和 tokenizer。
+不会自动安装第三方依赖。测试端另需计划指定的 AISBench（**tag ≥ `v3.1-20260820-master`**）、数据和 tokenizer。
 不把 Windows 依赖 wheel 上传到 Linux；按目标系统/架构准备依赖。
 
 ```powershell

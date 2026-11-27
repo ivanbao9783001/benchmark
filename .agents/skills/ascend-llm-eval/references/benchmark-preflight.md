@@ -13,6 +13,29 @@ SyntheticDataset capability. Config is generated before this check without loadi
 remote data in the coordinator environment. The native dataset implementation owns
 sample generation; support checks do not silently reduce load.
 
+## Dependency floor
+
+Tester environments must provide AISBench built from tag **v3.1-20260820-master
+or later**. The `__version__` string is not a sufficient check: every
+`v3.1-2026xxxx` tag reports `3.1.0`, but tags up to `v3.1-20260813-master` still
+compute the steady stage with the old `WAVE_OFFSET` / last-request-end rule
+(fixed by #464, commit `13908d2`, 2026-08-17). This CLI verifies steady summaries
+against the post-#464 rule — second request reaching max concurrency through the
+last event at that concurrency — so an older build keeps `total` intact but
+fails steady verification with `SUMMARY_TIMING_MISMATCH`. The gitee `master`
+snapshot is 3.0.0 and additionally lacks `PrefixLen` in `SyntheticDataset.load`.
+
+Check the capability, not just the version, in `tester.python` before freezing:
+
+```
+python -c "import importlib.metadata as m; print(m.version('ais_bench_benchmark'))"
+python -c "import inspect; from ais_bench.benchmark.calculators.stable_perf_metric_calculator import StablePerfMetricCalculator as C; src=inspect.getsource(C); print('OLD_STEADY_LOGIC' if 'WAVE_OFFSET' in src else 'OK')"
+```
+
+The version must be >= 3.1.0, the second command must print `OK`, and the
+`ais_bench` executable next to that interpreter must come from the same
+distribution, as preflight already enforces.
+
 For `mode=acc`, the data check binds the supported native task catalog
 (`gpqa_gen_0_shot_str`, `gsm8k_gen_0_shot_cot_str`), imports the task's native
 dataset class, evaluator and postprocessors, and counts the evaluated split.

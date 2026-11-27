@@ -44,7 +44,7 @@ deploy-eval-v2 install-skills --request skills-install.json
 
 - 模型节点与测试机需要 Python >=3.11 且可导入 `jsonschema`；`package-runtime` 只发布本包代码，不自动安装第三方依赖。
 - 不要把 Windows 依赖 wheel 上传到 Linux；按目标系统与架构准备依赖。
-- AISBench、数据集、tokenizer 与模型权重由 plan 绑定的现场提供，本流程不安装。
+- AISBench（**tag ≥ `v3.1-20260820-master`**；各 `v3.1-2026xxxx` tag 的版本号都是 `3.1.0`，旧 tag 的稳态统计口径与本 CLI 校验不一致，3.0.x 还缺 `PrefixLen`）、数据集、tokenizer 与模型权重由 plan 绑定的现场提供，本流程不安装。
 - 容器创建/复用按 top_input 的 owned/existing 模式执行；本节不创建容器，也不改变归属。
 
 ## 5. 节点与容器的 machine identity（existing/self 模式）

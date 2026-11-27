@@ -126,5 +126,5 @@ def validate_eval_bindings(plan, bindings):
             continue
         if native_task:
             raise ProtocolError('INVALID_INPUT: performance case cannot bind an aisbench_task dataset')
-        if 'shared_prefix_ratio' in case and dataset['type'] != 'aisbench_synthetic' and 'generation_manifest' not in dataset:
+        if case.get('shared_prefix_ratio', 0) > 0 and dataset['type'] != 'aisbench_synthetic' and 'generation_manifest' not in dataset:
             raise ProtocolError('INVALID_INPUT: prefix dataset requires generation evidence')

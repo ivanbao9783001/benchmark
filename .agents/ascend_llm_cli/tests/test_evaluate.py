@@ -18,12 +18,13 @@ class EvaluateTests(unittest.TestCase):
         from unittest.mock import patch
         from deploy_eval_v2.evaluate import execute_external_case
         from deploy_eval_v2.durable import atomic_json
-        for prefix_requested,native_status,expected in ((False,'VERIFIED','VERIFIED'),
-                (True,'VERIFIED','UNVERIFIED'),(False,'UNVERIFIED','UNVERIFIED')):
-            with self.subTest(prefix=prefix_requested,native=native_status), tempfile.TemporaryDirectory() as root:
+        for ratio,native_status,expected in ((None,'VERIFIED','VERIFIED'),
+                (0,'VERIFIED','VERIFIED'),(.5,'VERIFIED','UNVERIFIED'),
+                (None,'UNVERIFIED','UNVERIFIED')):
+            with self.subTest(ratio=ratio,native=native_status), tempfile.TemporaryDirectory() as root:
                 root=Path(root); tool=root/'tool';tool.touch();folder=root/'case'
                 case=dict(case_id='c',timeout_seconds=10,reset_cache=False,dataset_id='d',num_warmups=1)
-                if prefix_requested: case['shared_prefix_ratio']=.5
+                if ratio is not None: case['shared_prefix_ratio']=ratio
                 tester=dict(host='h',python=sys.executable,aisbench=str(tool),model_path=str(root),
                             datasets={'d':dict(type='jsonl',generation_manifest='manifest')})
                 plan=dict(unresolved=[],test_binding='t',cases=[case],service=dict(

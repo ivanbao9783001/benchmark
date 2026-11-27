@@ -12,7 +12,7 @@
 - **拓扑**：`colocated`（单实例混部）或 `pd`（prefill / decode / proxy，可单机可双机）。
 - **动作**：`deploy_and_eval`、`deploy_only`、`eval_only`、`release_only`。
 
-前置条件：目标节点为 Linux + 昇腾 NPU；`existing` 需要宿主 SSH 与 docker CLI，`owned` 需要宿主可执行 python；评测需要 tester 侧已安装 AISBench。控制面位置随模式而定：`owned` 在各节点宿主，`existing` 在各自容器内（self 节点本地执行，其余经 SSH + `docker exec`）。
+前置条件：目标节点为 Linux + 昇腾 NPU；`existing` 需要宿主 SSH 与 docker CLI，`owned` 需要宿主可执行 python；评测需要 tester 侧已安装 AISBench（**tag ≥ `v3.1-20260820-master`**）。控制面位置随模式而定：`owned` 在各节点宿主，`existing` 在各自容器内（self 节点本地执行，其余经 SSH + `docker exec`）。
 
 ## 2. 你是哪类读者
 

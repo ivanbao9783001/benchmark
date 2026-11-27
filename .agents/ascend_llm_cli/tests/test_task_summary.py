@@ -49,6 +49,12 @@ COMPILED = {
         },
     },
 }
+EXTERNAL_PLAN = {
+    'task_id': 't', 'intent': 'external_eval',
+    'service': {'service_id': 'svc-9', 'endpoint': 'http://179.165.1.3:18080',
+                'model': 'qwen3-0.6b', 'health_path': '/healthcheck'},
+    'cases': [{'case_id': 'case-1'}],
+}
 
 
 def write(path, value):
@@ -128,6 +134,52 @@ class TaskSummaryTests(unittest.TestCase):
         self.assertEqual(summary['limitations'], [])
         self.assertLessEqual(len(encode(response)), 8192)
         Draft202012Validator(SCHEMA).validate(response)
+
+    def test_external_eval_frozen_bundle_needs_no_compiled_topology(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)/'t'
+            write(root/'frozen/plan.json', EXTERNAL_PLAN)
+            write(root/'frozen/bindings.json', {'task_id': 't', 'testers': {
+                't': {'host': '179.165.1.3', 'work_root': '/opt/pd-work'}}})
+            write(root/'frozen/review.json', {'status': 'APPROVED'})
+            write(root/'top_input.json', {})
+            write(root/'results/eval-001/stage-result.json', {
+                'schema_version': '1.0', 'execution_status': 'SUCCEEDED',
+                'service_id': 'svc-9', 'case_id': 'case-1', 'evaluation_type': 'perf',
+                'evidence_status': 'PARTIAL', 'performance_validity': 'VERIFIED',
+            })
+            (root/'progress.log').write_text(
+                'PHASE eval 0 165.0 2026-11-26T00:00:00Z\n', encoding='utf-8')
+            response = summarize(binding(root), 't')
+        summary = response['summary']
+        task = summary['task']
+        self.assertEqual(task['model'], 'qwen3-0.6b')
+        self.assertEqual(task['model_id'], 'qwen3-0.6b')
+        self.assertEqual(task['action'], 'eval_only')
+        self.assertEqual(summary['limitations'], [])
+        phases = {item['name']: item for item in summary['phases']}
+        self.assertEqual(phases['deploy']['status'], 'not_applicable')
+        self.assertEqual(phases['release']['status'], 'not_applicable')
+        self.assertEqual(phases['eval']['status'], 'succeeded')
+        self.assertEqual(phases['freeze-inputs']['status'], 'succeeded')
+        self.assertEqual(summary['evaluation']['performance_validity'], 'VERIFIED')
+        Draft202012Validator(SCHEMA).validate(response)
+
+    def test_deploy_only_marks_eval_not_applicable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)/'t'
+            write(root/'frozen/plan.json', PLAN)
+            write(root/'frozen/bindings.json', BINDINGS)
+            write(root/'frozen/compiled.json', COMPILED)
+            write(root/'frozen/review.json', {'status': 'APPROVED'})
+            write(root/'top_input.json', {'action': 'deploy_only'})
+            (root/'progress.log').write_text(
+                'PHASE deploy 0 60.0 2026-11-26T00:00:00Z\n', encoding='utf-8')
+            response = summarize(binding(root), 't')
+        phases = {item['name']: item for item in response['summary']['phases']}
+        self.assertEqual(phases['deploy']['status'], 'succeeded')
+        self.assertEqual(phases['eval']['status'], 'not_applicable')
+        self.assertEqual(phases['release']['status'], 'unknown')
 
     def test_missing_inputs_and_failed_phase_stay_visible(self):
         with tempfile.TemporaryDirectory() as folder:

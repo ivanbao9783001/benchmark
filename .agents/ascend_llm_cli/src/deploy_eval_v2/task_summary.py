@@ -14,6 +14,8 @@ PHASES = ('prepare-inputs', 'package-runtime', 'draft-review', 'freeze-inputs',
           'release', 'stop-runtime')
 ALIASES = {'freeze': 'freeze-inputs', 'freeze_inputs': 'freeze-inputs',
            'deploy-service': 'deploy', 'evaluation': 'eval', 'stop': 'stop-runtime'}
+# Actions that never run a phase; absence is expected, not an unknown outcome.
+NOT_APPLICABLE = {'eval_only': ('deploy', 'release'), 'deploy_only': ('eval',)}
 MAX_JSON = 1048576
 MAX_PROGRESS = 262144
 
@@ -60,6 +62,15 @@ def _progress(path):
 def _frozen(root, errors):
     candidates = [p for p in root.glob('frozen*') if p.is_dir() and (p/'compiled.json').is_file()]
     if not candidates:
+        # Evaluating an existing service freezes plan/bindings/review without
+        # compiling a deployment topology; only non-deploy plans qualify here.
+        for path in root.glob('frozen*'):
+            if not path.is_dir() or not (path/'plan.json').is_file():
+                continue
+            plan = _read(path/'plan.json')
+            if isinstance(plan, dict) and plan.get('intent') in ('external_eval', 'service_eval'):
+                candidates.append(path)
+    if not candidates:
         if any(p.is_dir() for p in root.glob('frozen*')):
             errors.append('frozen directory is incomplete')
         return None, {}
@@ -68,7 +79,8 @@ def _frozen(root, errors):
     for name in ('plan.json', 'bindings.json', 'compiled.json', 'review.json'):
         path = folder/name
         if not path.is_file():
-            errors.append('frozen/' + name + ' missing')
+            if name != 'compiled.json':
+                errors.append('frozen/' + name + ' missing')
             continue
         value = _read(path, errors)
         if isinstance(value, dict):
@@ -84,6 +96,9 @@ def _compact(value):
 def _task_identity(plan, compiled, bindings, top_input, errors):
     deployment = plan.get('deployment') or {}
     model = deployment.get('model') or {}
+    # Existing-service evaluation names the model on the service, not a deployment.
+    served = (plan.get('service') or {}).get('model')
+    served = served if isinstance(served, str) and served else None
     topology = compiled.get('topology') or {}
     groups = topology.get('groups') or {}
     roles = {item.get('role') for item in deployment.get('instances') or []
@@ -105,15 +120,15 @@ def _task_identity(plan, compiled, bindings, top_input, errors):
             network=network.get('ip') if isinstance(network, dict) else network,
             npu_ids=group.get('npu_ids'), ports=group.get('ports'),
             device_map=group.get('device_map'), health_urls=group.get('health_urls'))))
-    if not model.get('id') and not compiled.get('model'):
+    if not model.get('id') and not compiled.get('model') and not served:
         errors.append('model identity not derivable')
     return _compact(dict(
         id=plan.get('task_id'), action=top_input.get('action'),
         topology=('pd' if roles & {'prefill', 'decode'} else 'colocated' if roles else None),
         runtime_mode=runtime.get('mode'),
         deployment_id=deployment.get('id'),
-        model=compiled.get('model') or model.get('served_name') or model.get('id'),
-        model_id=compiled.get('model_id') or model.get('id'),
+        model=compiled.get('model') or model.get('served_name') or model.get('id') or served,
+        model_id=compiled.get('model_id') or model.get('id') or served,
         endpoint=topology.get('endpoint'),
         connector=(deployment.get('kv_transfer') or {}).get('connector'),
         node_count=len(groups) or len(nodes) or None,
@@ -174,8 +189,9 @@ def _operations(root, errors):
     return rows
 
 
-def _phases(root, frozen_ready, operations):
+def _phases(root, frozen_ready, operations, action=None):
     latest, attempts = _progress(root/'progress.log')
+    skipped = NOT_APPLICABLE.get(action or '', ())
     artifact = {}
     if frozen_ready:
         artifact['freeze-inputs'] = 'succeeded'
@@ -195,6 +211,9 @@ def _phases(root, frozen_ready, operations):
         elif name in artifact:
             status = artifact[name]
             detail = dict(source='artifact')
+        elif name in skipped:
+            status = 'not_applicable'
+            detail = dict(source='action')
         else:
             status = 'unknown'
         if name in ('deploy', 'eval', 'release'):
@@ -222,6 +241,9 @@ def summarize(binding, task, *, status=None, status_error=None):
     plan = frozen.get('plan.json') or {}
     compiled = frozen.get('compiled.json') or {}
     bindings = frozen.get('bindings.json') or {}
+    # Evaluation-only tasks do not record an action; their plan intent decides it.
+    if not top_input.get('action') and plan.get('intent') in ('external_eval', 'service_eval'):
+        top_input = {**top_input, 'action': 'eval_only'}
     identity = _task_identity(plan, compiled, bindings, top_input, errors)
     identity['id'] = identity.get('id') or task
     identity['frozen'] = _compact(dict(directory=folder.name if folder else None,
@@ -278,7 +300,7 @@ def summarize(binding, task, *, status=None, status_error=None):
     response['schema_version'] = SCHEMA_VERSION
     response['summary'] = dict(
         task=identity, state=state,
-        phases=_phases(root, bool(folder), operations),
+        phases=_phases(root, bool(folder), operations, top_input.get('action')),
         operations=operations, service=service, evaluation=evaluation,
         cleanup=cleanup, limitations=errors[:8], updated_at=now())
     return response

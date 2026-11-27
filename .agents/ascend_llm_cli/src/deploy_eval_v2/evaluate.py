@@ -153,7 +153,8 @@ def run_performance_case(plan, tester, case, folder, argv, runner, environment,
     performance=summarize(folder,case,native,deadline=deadline,cancelled=cancelled)
     verified=performance['status']=='VERIFIED'
     # Prefix routing coverage is separate from native request performance.
-    if 'shared_prefix_ratio' in case:
+    # A zero ratio means no prefix is shared, so nothing needs verification.
+    if case.get('shared_prefix_ratio', 0) > 0:
         if synthetic is None:
             dataset_verified = tester['datasets'][case['dataset_id']].get('generation_manifest') is not None
         else:

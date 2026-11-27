@@ -36,9 +36,9 @@
 - 所有节点模式必须一致，owned 与 existing 不得混用；existing 模式下出现 `deployment.runtime.image`/`container`，或 owned 模式下出现 bindings 的 `container`，都会被拒绝。
 
 ## 容器内测试工具
-AISBench 可位于宿主或已有运行容器。宿主未找到工具时，继续只读检查已有容器的工具、解释器、依赖、tokenizer和网络；不要要求用户重复提供可自行发现的绑定。
+AISBench 可位于宿主或已有运行容器。宿主未找到工具时，继续只读检查已有容器的工具、解释器、依赖、tokenizer和网络；不要要求用户重复提供可自行发现的绑定。AISBench 必须来自 **tag `v3.1-20260820-master` 或更新**（发行名 `ais_bench_benchmark`）：`v3.1-2026xxxx` 各 tag 的 `__version__` 都是 `3.1.0`，只看版本号不够；`v3.1-20260813-master` 及更早的稳态统计仍是旧 `WAVE_OFFSET` / 末请求结束口径（#464 之前），与本 CLI 的稳态校验不一致，会得到 `SUMMARY_TIMING_MISMATCH`；3.0.x 的 `SyntheticDataset.load` 还不含 `PrefixLen`。不能因为低版本更易获取就顶替；核验命令见 [benchmark-preflight.md](../../ascend-llm-eval/references/benchmark-preflight.md)。
 容器 tester 与部署节点同规则，**existing 全容器内闭环**：设置 `container={"id":"完整64位容器ID","image":"sha256:完整镜像摘要"}`（`self` 节点可省略 `image`，非 self 节点仍须给出摘要）与 `container_work_root`；`work_root`、`python`、`aisbench`、`model_path`、`environment`、`datasets`、`machine_id` 全部按容器内取值；worker 解释器取 `python`（容器内值）。`work_root` 是容器内工作根，执行器在容器内建立任务目录，不要求容器挂载宿主目录；`container_work_root` 是容器内操作根，允许不存在，由执行器创建，派生时取 `work_root`。`machine_id` 在容器内运行 `deploy-eval-v2 identity` 取证（优先 `/etc/machine-id`，为空时用 hostname 派生）。owned 场景 tester 在宿主：不写 `container` 与 `container_work_root`，`python/aisbench/model_path/datasets/machine_id` 按宿主取值。未声明 tester 时默认控制节点（existing 即控制容器，owned 即控制机）。container_work_root 只能与 container 同时出现，必须是容器内绝对路径且不含 `:`。它可以是容器内独立目录（如 /tmp/de-eval-tester，执行器在容器内建目录、跑完回传）。
-冻结前 docker inspect 核对完整ID、镜像、运行状态；只读检查容器内Python、AISBench版本及依赖、权重可见性、被测endpoint从容器可达。工具存在不代表依赖完整。使用公开CLI执行，不手写docker exec负载封装。容器仅提供测试环境，不授予停止、重启、删除容器或被测服务的权限。执行器只停止本任务工具进程组；证据回收失败或清理未知必须报告，不能标记完整。
+冻结前 docker inspect 核对完整ID、镜像、运行状态；只读检查容器内Python、AISBench版本与稳态口径（tag ≥ v3.1-20260820-master）及依赖、权重可见性、被测endpoint从容器可达。工具存在不代表依赖完整。使用公开CLI执行，不手写docker exec负载封装。容器仅提供测试环境，不授予停止、重启、删除容器或被测服务的权限。执行器只停止本任务工具进程组；证据回收失败或清理未知必须报告，不能标记完整。
 
 ## 服务健康路径
 模型和代理健康路由必须分别从本轮参考或实际接口确认，不统一套用/health。deploy实例checks.health绑定各自路径；service.json携带入口health_path；部署后的eval沿用该路径。独立prepare-inputs(stage=eval)允许health_path字段，与endpoint同源；默认/health只适用于已确认提供该路由的服务。用户提供service对象时沿用其health_path。仅设置健康路径不授予服务管理权限。AISBench预检也从容器实际测试环境访问同一路由。

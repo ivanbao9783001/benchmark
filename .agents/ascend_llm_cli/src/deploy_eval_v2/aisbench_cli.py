@@ -96,7 +96,11 @@ def synthetic_config(case):
 def check_synthetic_support(case):
     """Check the installed AISBench implementation, without generating another sample set."""
     import inspect
-    from ais_bench.benchmark.datasets import SyntheticDataset
+    try:
+        from ais_bench.benchmark.datasets import SyntheticDataset
+    except ImportError:
+        # 3.1.0 lazy-loads dataset modules, so the class only exists in the submodule.
+        from ais_bench.benchmark.datasets.synthetic import SyntheticDataset
     config=synthetic_config(case)
     SyntheticDataset._check_synthetic_config(config)
     source=inspect.getsource(SyntheticDataset.load)
@@ -133,7 +137,7 @@ def dataset_for(benchmark, case, *, check_files=True):
     # The binding itself is knowable even when data lives only on the remote host.
     # Do not create containers merely to discover a missing evidence path.
     manifest_value = dataset.get('generation_manifest')
-    if 'shared_prefix_ratio' in case and not manifest_value:
+    if case.get('shared_prefix_ratio', 0) > 0 and not manifest_value:
         raise ValueError('Shared prefix case requires generation manifest evidence')
     if manifest_value:
         if not isinstance(manifest_value, str):
