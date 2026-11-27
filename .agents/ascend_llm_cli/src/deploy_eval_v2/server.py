@@ -12,6 +12,7 @@ from .task_runtime import Runtime
 from .protocol import encode, envelope, ProtocolError
 from .json_io import load_json,unique_object,reject_constant
 from .launcher import validate_identity
+from .runtime_socket import socket_address
 
 
 def serve(root, task_id, executor, identity=None):
@@ -98,15 +99,16 @@ def serve(root, task_id, executor, identity=None):
         class Server(socketserver.ThreadingUnixStreamServer):
             daemon_threads = True
 
-        with Server(str(endpoint), Handler) as server:
-            os.chmod(endpoint, 0o600)
-            try:
-                server.serve_forever()
-            finally:
+        with socket_address(root) as address:
+            with Server(address, Handler) as server:
+                os.chmod(endpoint, 0o600)
                 try:
-                    endpoint.unlink()
-                except FileNotFoundError:
-                    pass
+                    server.serve_forever()
+                finally:
+                    try:
+                        endpoint.unlink()
+                    except FileNotFoundError:
+                        pass
 
 
 def main():

@@ -7,6 +7,7 @@ from .publication import build_archive
 from .publication_cli import task_binding
 from .ssh_publication import upload_archive
 from .ssh_transport import exchange, host_argv
+from .runtime_socket import socket_address
 
 
 def start_socket(request, config):
@@ -101,7 +102,8 @@ def stop_installed(root,request):
     try:
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as client:
             client.settimeout(5)
-            client.connect(str(root/'.runtime/control.sock'))
+            with socket_address(root) as address:
+                client.connect(address)
             packet=dict(protocol_version='1.0',task_id=request['task_id'],kind='stop-runtime',nonce=request['nonce'])
             client.sendall(json.dumps(packet).encode()+b'\n')
             with client.makefile('rb') as stream:

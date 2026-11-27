@@ -1,7 +1,6 @@
 """Bounded subprocess commands and live Unix socket identity probe."""
 import json
 import os
-from pathlib import Path
 import re
 import signal
 import socket
@@ -10,6 +9,7 @@ import threading
 import time
 from .json_io import unique_object, reject_constant
 from .protocol import ProtocolError, encode
+from .runtime_socket import socket_address
 
 
 def bounded_command(argv, timeout=10, limit=8192):
@@ -78,7 +78,8 @@ def probe_identity(root, task_id, timeout=5):
     request = dict(protocol_version='1.0', task_id=task_id, kind='identity')
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.settimeout(timeout)
-        client.connect(str(Path(root)/'.runtime/control.sock'))
+        with socket_address(root) as address:
+            client.connect(address)
         client.sendall(encode(request)+b'\n')
         with client.makefile('rb') as reader:
             raw = reader.readline(8194)

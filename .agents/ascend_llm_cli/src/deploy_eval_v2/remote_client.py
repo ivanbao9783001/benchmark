@@ -9,6 +9,7 @@ from .protocol import encode, envelope,ProtocolError
 from .json_io import unique_object,reject_constant
 from .contracts import validate_command,validate_query,exit_code
 from .wire_contracts import validate_response
+from .runtime_socket import socket_address
 
 
 def _offline_identity(root,task_id):
@@ -128,7 +129,8 @@ def relay(root,request,*,socket_factory=socket.socket):
     try:
         with socket_factory(socket.AF_UNIX,socket.SOCK_STREAM) as client:
             client.settimeout(request.get('wait_ms',30000)/1000+5)
-            client.connect(str(Path(root)/'.runtime/control.sock'))
+            with socket_address(root) as address:
+                client.connect(address)
             client.sendall(encode(request)+b'\n')
             with client.makefile('rb') as reader:
                 raw=reader.readline(limit+2)
