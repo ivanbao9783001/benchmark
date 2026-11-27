@@ -181,6 +181,24 @@ class TaskSummaryTests(unittest.TestCase):
         self.assertEqual(phases['eval']['status'], 'not_applicable')
         self.assertEqual(phases['release']['status'], 'unknown')
 
+    def test_deploy_only_action_read_from_v2_top_input(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)/'t'
+            write(root/'frozen/plan.json', PLAN)
+            write(root/'frozen/bindings.json', BINDINGS)
+            write(root/'frozen/compiled.json', COMPILED)
+            write(root/'frozen/review.json', {'status': 'APPROVED'})
+            write(root/'top_input.json', {'schema_version': 'top-input/2',
+                                          'task': {'id': 't', 'action': 'deploy_only'}})
+            (root/'progress.log').write_text(
+                'PHASE deploy 0 60.0 2026-11-26T00:00:00Z\n', encoding='utf-8')
+            response = summarize(binding(root), 't')
+        summary = response['summary']
+        self.assertEqual(summary['task']['action'], 'deploy_only')
+        phases = {item['name']: item for item in summary['phases']}
+        self.assertEqual(phases['deploy']['status'], 'succeeded')
+        self.assertEqual(phases['eval']['status'], 'not_applicable')
+
     def test_missing_inputs_and_failed_phase_stay_visible(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)/'t'

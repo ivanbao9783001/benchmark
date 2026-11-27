@@ -241,7 +241,12 @@ def summarize(binding, task, *, status=None, status_error=None):
     plan = frozen.get('plan.json') or {}
     compiled = frozen.get('compiled.json') or {}
     bindings = frozen.get('bindings.json') or {}
-    # Evaluation-only tasks do not record an action; their plan intent decides it.
+    # top-input/2 nests the action under ``task``; older request fixtures keep it
+    # at the top level. Normalize once so identity and phases agree.
+    nested = top_input.get('task')
+    if not top_input.get('action') and isinstance(nested, dict) and nested.get('action'):
+        top_input = {**top_input, 'action': nested['action']}
+    # Evaluation-only tasks may not record an action; their plan intent decides it.
     if not top_input.get('action') and plan.get('intent') in ('external_eval', 'service_eval'):
         top_input = {**top_input, 'action': 'eval_only'}
     identity = _task_identity(plan, compiled, bindings, top_input, errors)
