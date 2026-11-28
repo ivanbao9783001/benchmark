@@ -21,7 +21,27 @@ class TransportTests(unittest.TestCase):
 
     def test_unknown_outcome(self):
         with self.assertRaisesRegex(ProtocolError, 'UNKNOWN_OUTCOME'):
-            self.run_child('raise SystemExit(255)')
+            exchange([sys.executable, '-c', 'raise SystemExit(255)'],
+                     {'task_id': 't', 'kind': 'deploy'}, timeout=3)
+
+    def test_read_only_child_failure_is_observer_unavailable(self):
+        # A crashed observer says nothing about the task outcome; a mutating
+        # command still reports that its side effect is unknown.
+        argv = [sys.executable, '-c', 'raise SystemExit(255)']
+        for kind in ('get-status', 'wait-event', 'read-result'):
+            with self.assertRaisesRegex(ProtocolError, 'OBSERVER_UNAVAILABLE'):
+                exchange(argv, {'task_id': 't', 'kind': kind}, timeout=3)
+        with self.assertRaisesRegex(ProtocolError, 'UNKNOWN_OUTCOME'):
+            exchange(argv, {'task_id': 't', 'kind': 'release'}, timeout=3)
+
+    def test_observer_failure_carries_stderr_diagnostic(self):
+        argv = [sys.executable, '-c', 'import observer_missing_dependency']
+        with self.assertRaisesRegex(ProtocolError, 'observer_missing_dependency'):
+            exchange(argv, {'task_id': 't', 'kind': 'get-status'}, timeout=3)
+        # Mutating commands keep the terse, stable public message.
+        with self.assertRaises(ProtocolError) as caught:
+            exchange(argv, {'task_id': 't', 'kind': 'deploy'}, timeout=3)
+        self.assertEqual(str(caught.exception), 'UNKNOWN_OUTCOME')
 
     def test_no_pty_and_host_validation(self):
         self.assertIn('-T', ssh_argv('user@host', ['python3', '/a b/client.py']))

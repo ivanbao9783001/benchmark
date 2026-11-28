@@ -1,5 +1,8 @@
 import io
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +22,15 @@ class RemoteClientTests(unittest.TestCase):
             atomic_json(root/'state.json',snapshot)
         (root/'task.jsonl').write_bytes(b''.join(encode(event)+b'\n' for event in events))
         return root
+
+    def test_observer_imports_without_the_schema_stack(self):
+        # The read-only observer must stay loadable on an interpreter that only
+        # has the standard library; the schema stack belongs to the command path.
+        program = ("import sys;"
+                   "import deploy_eval_v2.remote_client, deploy_eval_v2.task_snapshot;"
+                   "assert 'jsonschema' not in sys.modules, "
+                   "sorted(name for name in sys.modules if 'jsonschema' in name)")
+        subprocess.run([sys.executable, '-c', program], check=True, env=dict(os.environ))
 
     def test_offline_status_reads_persisted_snapshot(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -122,6 +134,26 @@ class RemoteClientTests(unittest.TestCase):
         client=factory.return_value.__enter__.return_value
         client.makefile.return_value=io.BytesIO(data)
         return factory,client
+
+    def test_missing_schema_stack_degrades_get_status_to_snapshot(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=self.task_root(folder,
+                dict(protocol_version='1.0',task_id='t',task_version=3,state='CANCELLED',
+                     operation_id=None,service_id=None,task_cancelled=True,next_cursor=3),
+                [dict(task_id='t',seq=1,type='task.initialized',status='EXTERNAL_READY'),
+                 dict(task_id='t',seq=3,type='operation.cancelled',status='CANCELLED')])
+            factory,_=self.factory(encode(envelope('t',3))+b'\n')
+            with patch('deploy_eval_v2.remote_client.validate_response',
+                       side_effect=ImportError('jsonschema')):
+                response=relay(root,dict(protocol_version='1.0',task_id='t',kind='get-status'),
+                               socket_factory=factory)
+                self.assertEqual(response['source'],'state.json')
+                self.assertEqual(response['task_state'],'CANCELLED')
+                factory,_=self.factory(encode(envelope('t',3))+b'\n')
+                with self.assertRaisesRegex(ProtocolError,'OBSERVER_UNAVAILABLE'):
+                    relay(root,dict(protocol_version='1.0',task_id='t',kind='wait-event',
+                                    after_seq=3,wait_ms=5),
+                          socket_factory=factory)
 
     def test_query_budget_and_identity(self):
         request=dict(protocol_version='1.0',task_id='t',kind='wait-event',after_seq=7,wait_ms=5)

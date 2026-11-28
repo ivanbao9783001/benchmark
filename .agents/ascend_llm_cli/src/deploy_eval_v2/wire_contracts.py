@@ -1,13 +1,15 @@
 """Versioned wire structure plus cross-event identity/cursor invariants."""
 from functools import lru_cache
 from pathlib import Path
-from jsonschema import Draft202012Validator,FormatChecker
 from .json_io import load_json
 from .protocol import ProtocolError,encode,summary_bytes
 
 
 @lru_cache(maxsize=2)
 def validator(name):
+    # Imported here so the read-only observer can load this module without the
+    # third-party schema stack.
+    from jsonschema import Draft202012Validator,FormatChecker
     root=Path(__file__).parent/'schemas'
     schema=load_json(root/(name+'.schema.json'))
     if name=='response':

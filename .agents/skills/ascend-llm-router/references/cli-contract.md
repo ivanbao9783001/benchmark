@@ -76,6 +76,7 @@ control.json 是受信控制端配置，固定位于交付根 `task_root/control
 - STALE_VERSION：重读事实并重新决策，不盲改版本重发。
 - REQUEST_CONFLICT：同幂等键内容不同，停止并核对原请求。
 - UNKNOWN_OUTCOME、协议坏 JSON、SSH 断开：先查状态和原游标，不创建新任务或重跑部署。
+- OBSERVER_UNAVAILABLE：只读查询（get-status/wait-event/read-result）的观察进程未能启动或完成，例如其解释器缺少依赖或执行超时。它只说明取证失败，既不表示任务结果未知，也不否定已有清理结论；应先用可用解释器重查，或采用 task-summary 的本地快照回退。写操作失败仍返回 UNKNOWN_OUTCOME。
 - RECOVERY_REQUIRED、release.unverified：保留现场，停止复用资源，核验归属与执行证据。
 
 退出码已实现：输入/状态错误 2、通信未知 3、确认操作失败 4；退出码 0 只表示成功提交/查询/等待（含停机后的离线状态查询），业务成败仍以事件为准。
@@ -92,3 +93,5 @@ control.json 是受信控制端配置，固定位于交付根 `task_root/control
 当前 CLI：原子JSON产物采用与事件摘要相同的规范序列化，expected-sha256验证文件字节；不改旧包旧产物。read-result在runtime socket不可用时，可核对持久任务身份后只读本任务节点运行根的受限路径产物；不恢复执行、不改变状态或授权其他任务。停机后仍按offset/next_offset有界取回日志，并独立核验完整性。
 
 get-status 同样支持停机后离线查询：socket 不可用时，核对同一持久身份后只读 state.json，返回 `offline=true`、`source=state.json`、`runtime=STOPPED|UNOBSERVED`。若 task.jsonl 末条记录比快照新，则标记 `stale=true` 并给出 `journal_next_cursor`；末条为终态事件时以该终态为准。身份或快照无法核验时仍返回 UNKNOWN_OUTCOME。该路径不恢复执行、不写状态、不触碰 claims/effects。`runtime=UNOBSERVED` 且状态非终态时不要再 wait-event，按 RECOVERY_REQUIRED 保留现场。进程已确认退出的重复 stop-runtime 返回 `runtime_stopped=true` 与 `already_stopped=true`；进程仍存活但 socket 不可达时仍为 UNKNOWN_OUTCOME。
+
+`task-summary` 在状态查询不可用时，会在控制进程内直读本任务节点运行根的同一持久快照（不新起解释器），返回 `state.source=state.json`、`state.offline=true` 与终态；持久证据无法核验时才退回 `state.source=unavailable` 并把 `OBSERVER_UNAVAILABLE` 记入 limitations。

@@ -38,7 +38,7 @@
           "type": "object",
           "required": ["source"],
           "properties": {
-            "source": {"enum": ["get-status", "unavailable", "none"]},
+            "source": {"enum": ["get-status", "state.json", "unavailable", "none"]},
             "task_state": {"type": ["string", "null"]},
             "task_version": {"type": ["integer", "null"]},
             "operation_id": {"type": ["string", "null"]},

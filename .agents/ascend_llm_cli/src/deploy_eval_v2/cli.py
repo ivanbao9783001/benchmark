@@ -131,7 +131,8 @@ def main(argv=None):
                 except (ProtocolError, ValueError, KeyError, OSError, TypeError) as exc:
                     status_error = {'code': (str(exc).split(':', 1)[0]
                                              if isinstance(exc, ProtocolError) else 'UNKNOWN_OUTCOME'),
-                                    'message': 'get-status unavailable'}
+                                    'message': (str(exc)[:300] if isinstance(exc, ProtocolError)
+                                                else 'get-status unavailable')}
                 response = summarize(binding, task, status=status, status_error=status_error)
                 if len(encode(response)) > 8192:
                     raise ProtocolError('INVALID_INPUT: output reference too large')

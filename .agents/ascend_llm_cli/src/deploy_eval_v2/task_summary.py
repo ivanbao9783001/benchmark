@@ -310,19 +310,33 @@ def summarize(binding, task, *, status=None, status_error=None):
                                 source=last['kind'], operation_id=last['operation_id'],
                                 evidence_ref=last['evidence_ref']))
 
+    query_error = status_error
+    if status is None and status_error:
+        # The observer may be unavailable (for example, its interpreter lacks
+        # the contract stack) while the durable evidence is intact. The node
+        # root is local to this task, so read the snapshot in-process rather
+        # than spawning another interpreter.
+        try:
+            from .task_snapshot import offline_status
+            status = offline_status(Path(binding['root']), task)
+            status_error = None
+        except (ProtocolError, ValueError, OSError, TypeError):
+            pass
     if status is not None:
         state = _compact(dict(task_state=status.get('task_state'),
                               task_version=status.get('task_version'),
                               operation_id=status.get('operation_id'),
                               offline=status.get('offline'),
-                              source='get-status'))
+                              source=status.get('source') or 'get-status'))
     elif status_error:
         state = dict(task_state=None, task_version=None, operation_id=None,
                      source='unavailable', error=status_error)
     else:
         state = dict(task_state=None, task_version=None, operation_id=None, source='none')
-    if status_error:
-        errors.append('get-status unavailable: ' + str(status_error.get('code', 'UNKNOWN_OUTCOME')))
+    if query_error:
+        code = str(query_error.get('code', 'UNKNOWN_OUTCOME'))
+        errors.append('get-status unavailable: ' + code +
+                      ('' if status_error else '; local snapshot used'))
     if not folder:
         errors.append('frozen inputs not found under task_root')
     if not (root/'progress.log').is_file():

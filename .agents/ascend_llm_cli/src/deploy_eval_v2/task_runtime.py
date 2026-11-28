@@ -8,10 +8,7 @@ from .contracts import validate_command, fingerprint
 from .event_journal import Journal
 from .protocol import ProtocolError, NON_BOUNDARY
 from .durable import atomic_json
-
-
-TERMINALS = ('deployment.ready','evaluation.completed','operation.failed','operation.cancelled',
-             'release.completed','release.unverified','task.expired','runtime.recovery_required')
+from .task_snapshot import TERMINALS
 
 
 class Runtime:

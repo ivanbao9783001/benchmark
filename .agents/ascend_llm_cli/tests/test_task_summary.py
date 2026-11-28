@@ -257,6 +257,52 @@ class TaskSummaryTests(unittest.TestCase):
         self.assertTrue(any('get-status unavailable' in item
                             for item in summary['limitations']))
 
+    def test_status_falls_back_to_local_snapshot_when_observer_fails(self):
+        # Regression: a broken observer interpreter must not erase the durable
+        # state that acceptance needs (CANCELLED + offline) or the cleanup proof.
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            delivery = base/'delivery'
+            fixtures(delivery)
+            node = base/'node'
+            write(node/'.runtime/identity.json', {'task_id': 't', 'node_root': str(node)})
+            write(node/'.runtime/process.json',
+                  {'pid': 999999, 'start_ticks': '1', 'boot_id': 'b', 'session': 999999})
+            write(node/'state.json', {'protocol_version': '1.0', 'task_id': 't',
+                                      'task_version': 3, 'state': 'CANCELLED',
+                                      'operation_id': None, 'service_id': None,
+                                      'next_cursor': 3})
+            (node/'task.jsonl').write_bytes(b''.join(
+                encode({'task_id': 't', 'seq': seq, 'type': kind, 'status': status}) + b'\n'
+                for seq, kind, status in (
+                    (1, 'task.initialized', 'EXTERNAL_READY'),
+                    (2, 'operation.failed', 'FAILED'),
+                    (3, 'operation.cancelled', 'CANCELLED'))))
+            bindings = {'task_root': str(delivery), 'root': str(node),
+                        'allowed_root': str(base), 'host': 'example.invalid'}
+            with patch('deploy_eval_v2.launcher.process_identity',
+                       side_effect=FileNotFoundError()):
+                response = summarize(bindings, 't',
+                                     status_error={'code': 'OBSERVER_UNAVAILABLE'})
+        summary = response['summary']
+        self.assertEqual(response['status'], 'OK')
+        self.assertEqual(summary['state']['source'], 'state.json')
+        self.assertEqual(summary['state']['task_state'], 'CANCELLED')
+        self.assertIs(summary['state']['offline'], True)
+        self.assertEqual(summary['cleanup']['status'], 'VERIFIED')
+        self.assertTrue(any('local snapshot used' in item for item in summary['limitations']))
+
+    def test_status_fallback_stays_unavailable_without_local_evidence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)/'t'
+            fixtures(root)
+            response = summarize(binding(root), 't',
+                                 status_error={'code': 'OBSERVER_UNAVAILABLE'})
+        summary = response['summary']
+        self.assertEqual(summary['state']['source'], 'unavailable')
+        self.assertIsNone(summary['state']['task_state'])
+        self.assertFalse(any('local snapshot used' in item for item in summary['limitations']))
+
     def test_cli_degrades_when_status_is_unreachable(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)/'t'

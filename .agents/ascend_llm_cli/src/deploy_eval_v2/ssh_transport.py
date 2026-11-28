@@ -8,6 +8,23 @@ import time
 from .protocol import encode, ProtocolError
 from .json_io import unique_object, reject_constant
 
+READ_ONLY_KINDS = frozenset(('get-status', 'wait-event', 'read-result'))
+
+
+def _failure_code(request):
+    """A read-only query can never conclude that a side effect is unknown."""
+    if isinstance(request, dict) and request.get('kind') in READ_ONLY_KINDS:
+        return 'OBSERVER_UNAVAILABLE'
+    return 'UNKNOWN_OUTCOME'
+
+
+def _observer_detail(code, diagnostic):
+    if code != 'OBSERVER_UNAVAILABLE' or not diagnostic:
+        return ''
+    tail = bytes(diagnostic[-300:]).decode('utf-8', 'replace').strip()
+    tail = ' '.join(tail.split())
+    return ': ' + tail if tail else ''
+
 
 def ssh_argv(host, remote_argv):
     if not re.fullmatch(r'(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9][A-Za-z0-9_.-]*', host):
@@ -129,14 +146,16 @@ def exchange(argv, request, timeout=45, response_limit=8192, cancelled=None, inp
     except subprocess.TimeoutExpired as exc:
         process.kill()
         process.wait()
-        raise ProtocolError('UNKNOWN_OUTCOME') from exc
+        code = _failure_code(request)
+        raise ProtocolError(code + _observer_detail(code, diagnostic)) from exc
     if overflow.is_set():
         raise ProtocolError('TRANSPORT_PROTOCOL_ERROR: oversized response')
     if process.returncode not in (0, 2, 3, 4):
         # 125/126/127 are docker exec's own failures, not a node-worker answer.
         if container and process.returncode in (125, 126, 127):
             raise ProtocolError('INVALID_INPUT: container exec unavailable')
-        raise ProtocolError('UNKNOWN_OUTCOME')
+        code = _failure_code(request)
+        raise ProtocolError(code + _observer_detail(code, diagnostic))
     try:
         value = json.loads(output,object_pairs_hook=unique_object,parse_constant=reject_constant)
         if len(encode(value)) > response_limit:

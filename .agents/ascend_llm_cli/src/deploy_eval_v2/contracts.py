@@ -3,11 +3,13 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from jsonschema import Draft202012Validator
 from .protocol import encode, ProtocolError
 
 
 def validate_command(command):
+    # Only the mutating command path needs the JSON Schema stack; the read-only
+    # observer must stay importable on interpreters that lack it.
+    from jsonschema import Draft202012Validator
     schema = json.loads((Path(__file__).parent/'schemas/command.schema.json').read_text(encoding='utf-8'))
     if list(Draft202012Validator(schema).iter_errors(command)):
         raise ProtocolError('INVALID_INPUT')
@@ -62,7 +64,7 @@ def validate_query(request):
             raise ProtocolError('INVALID_INPUT')
 
 
-TRANSPORT_ERRORS = {'UNKNOWN_OUTCOME', 'SSH_UNAVAILABLE', 'TRANSPORT_PROTOCOL_ERROR'}
+TRANSPORT_ERRORS = {'UNKNOWN_OUTCOME', 'OBSERVER_UNAVAILABLE', 'SSH_UNAVAILABLE', 'TRANSPORT_PROTOCOL_ERROR'}
 
 
 def exit_code(response):
