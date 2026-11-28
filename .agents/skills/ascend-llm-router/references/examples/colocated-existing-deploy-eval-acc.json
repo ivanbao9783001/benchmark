@@ -9,7 +9,7 @@
   },
   "nodes": {
     "n1": {
-      "host": "192.0.2.11",
+      "host": "node-01.example",
       "allowed_root": "/srv/work",
       "python": "/srv/venvs/deploy-eval/bin/python",
       "guard_root": "/srv/guard",
@@ -56,7 +56,7 @@
   },
   "evaluation": {
     "tester": {
-      "host": "192.0.2.11",
+      "host": "node-01.example",
       "work_root": "/srv/work",
       "python": "/workspace/venvs/aisbench/bin/python",
       "aisbench": "/workspace/venvs/aisbench/bin/ais_bench",

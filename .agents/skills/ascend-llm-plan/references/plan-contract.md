@@ -4,6 +4,8 @@
 
 随附 schema 定义 deploy-plan、deploy-bindings、external-eval-plan 与 eval-bindings。审阅与冻结执行 schema 与语义校验，编译拓扑与脚本，并绑定全部输入与 runtime 摘要；这些本地检查不证明宿主就绪。
 
+`plan.intent` 是计划层枚举，不等于 `task.action`：`deploy_only` / `deploy_and_eval` → `deploy`；`eval_only` 连外部服务（endpoint+model）→ `external_eval`；`eval_only` 接 `service.json` → `service_eval`；`release_only` 不生成新计划。禁止把 action 值写进 intent。
+
 两种容器模式的 deploy plan（`owned_container` 或 `existing_container`）都可以内嵌 `evaluation{cases, test_binding}`，此时 deploy bindings 包含 testers。每个 tester 绑定 host、machine_id、work_root、python、aisbench、model_path 与 datasets；原生合成数据集用 `type=aisbench_synthetic`。显式负载值原样保留，默认值必须在审阅前解析成具体值。
 
 可选的 `tester.environment` 是显式环境变量字符串映射，作用于 preflight、AISBench 与 postflight 子进程，不做 shell 展开；冻结真实绝对路径，不写 `$VARIABLE`。所需 CANN 环境用只读检查从所选已安装工具链中发现，并在部署前用这些值验证导入。不得为补齐缺失库而安装或升级用户环境。记录所选工具链、环境值与导入证据；绝不因可执行文件存在就推断导入可用。环境值不得包含密钥，因为冻结输入与证据会保留它们。

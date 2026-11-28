@@ -57,7 +57,45 @@ class DeploymentCompilerTests(unittest.TestCase):
             argv = commands['prefill']['argv']
             kv = json.loads(argv[argv.index('--kv-transfer-config')+1])
             self.assertEqual(kv['kv_connector'], connector)
+            self.assertEqual(set(kv['kv_connector_extra_config']), {'prefill', 'decode'})
+            for side in ('prefill', 'decode'):
+                self.assertEqual(set(kv['kv_connector_extra_config'][side]),
+                                 {'dp_size', 'tp_size'})
             self.assertNotIn('ascend_local_comm_res_path', kv['kv_connector_extra_config'])
+
+    def test_reference_kv_private_keys_pass_through_unchanged(self):
+        plan, bound = deploy_plan(), bindings()
+        kv = self._prefill_kv(compile_bound_deployment(plan, bound))
+        # Private keys are image/version specific; the CLI must not drop them.
+        kv['kv_connector_extra_config']['ascend_local_comm_res_path'] = '/tmp/comm'
+        prefill = next(item for item in plan['deployment']['instances']
+                       if item['role'] == 'prefill')
+        prefill['launch']['kv_transfer_config'] = kv
+        compiled = self._prefill_kv(compile_bound_deployment(plan, bound))
+        self.assertEqual(compiled['kv_connector_extra_config']
+                         ['ascend_local_comm_res_path'], '/tmp/comm')
+
+    def test_reference_kv_generic_keys_must_match_topology(self):
+        for key, value in (('kv_connector', 'OtherConnector'),
+                           ('kv_role', 'kv_consumer'),
+                           ('kv_port', '65000'),
+                           ('engine_id', 'other-engine')):
+            plan, bound = deploy_plan(), bindings()
+            kv = self._prefill_kv(compile_bound_deployment(plan, bound))
+            kv[key] = value
+            prefill = next(item for item in plan['deployment']['instances']
+                           if item['role'] == 'prefill')
+            prefill['launch']['kv_transfer_config'] = kv
+            with self.assertRaises(ProtocolError):
+                compile_bound_deployment(plan, bound)
+
+    @staticmethod
+    def _prefill_kv(result):
+        commands = {}
+        for group in result['groups'].values():
+            commands.update({command['name']: command for command in group['commands']})
+        argv = commands['prefill']['argv']
+        return json.loads(argv[argv.index('--kv-transfer-config') + 1])
 
     def test_engine_id_duplicate_warning_is_connector_neutral(self):
         dep = {'id': 't', 'instances': [
@@ -268,6 +306,17 @@ class ContainerDeviceIdMapTests(unittest.TestCase):
                          ['ASCEND_RT_VISIBLE_DEVICES'], '0,1,2,3')
         self.assertEqual(result['groups']['node_b/model']['commands'][0]['env']
                          ['ASCEND_RT_VISIBLE_DEVICES'], '0,1,2,3')
+        # KV wiring spans both nodes: each side uses its own bound kv port.
+        for group, side, role in (('node_a/model', 'prefill', 'kv_producer'),
+                                  ('node_b/model', 'decode', 'kv_consumer')):
+            command = result['groups'][group]['commands'][0]
+            kv = json.loads(command['argv'][command['argv'].index('--kv-transfer-config')+1])
+            self.assertEqual(kv['kv_role'], role)
+            self.assertEqual(kv['kv_connector'],
+                             plan['deployment']['connections']['kv_transfer'][0]['connector'])
+            node = group.split('/')[0]
+            self.assertEqual(kv['kv_port'], str(
+                bound['nodes'][node]['deployments']['pd-a']['ports'][side]['kv']))
 
 
 class ModelNamingTests(unittest.TestCase):

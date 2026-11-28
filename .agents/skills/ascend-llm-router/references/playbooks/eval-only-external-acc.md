@@ -18,7 +18,7 @@
 | `task.action` / `task.eval_mode` | `eval_only` / `acc` |
 | `task.on_idle` | 不写（禁用） |
 | `nodes.<id>` | 一台，`host` 即控制端兼测试机；不需要 `guard_root`、`model_paths`、`authorization` |
-| `evaluation.service` | `{endpoint, model}` 必填，`service_id` 可省略 |
+| `evaluation.service` | `{endpoint, model}` 必填；`service_id` 省略，由 CLI 按 endpoint+model 派生 `svc-<sha256 前 32 位>`，不要自造可读串 |
 | `evaluation.tester` | 同 acc；容器内测试需 `container` 与 `container_work_root` |
 | `evaluation.dataset` | `{id, split, scope}`，与 `datasets.<id>` 一致 |
 | 不写 | `deployment`；`evaluation.params` 不是 CLI 字段，参数须物化进 `cases[]` |

@@ -8,7 +8,7 @@
   },
   "nodes": {
     "n1": {
-      "host": "192.0.2.32",
+      "host": "node-01.example",
       "allowed_root": "/srv/work",
       "python": "/srv/venvs/deploy-eval/bin/python",
       "guard_root": "/srv/guard",
@@ -63,7 +63,7 @@
       "served_name": "qwen3-8b"
     },
     "kv_transfer": {
-      "connector": "MooncakeHybridConnector"
+      "connector": "REPLACE_WITH_REGISTRY_CONNECTOR"
     },
     "instances": [
       {

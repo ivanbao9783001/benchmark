@@ -22,7 +22,7 @@
 | `nodes.<control-node>.container.self` | `true`；当前节点本地执行，另一节点经 SSH + `docker exec` 进入容器 |
 | `nodes.<other-node>.container` | 必须给出 `id`；`image` 缺失时由控制端经宿主 `docker inspect` 取证并写回；该节点控制面在容器内 |
 | `nodes.<proxy-node>.paths.proxy_program` | proxy 所在节点必须有 |
-| `deployment.kv_transfer.connector` | 必填，值必须随镜像 tag 一起给出：以本镜像注册表中存在且可加载的 connector 为准；执行方只做只读确认，确认不了记 `UNVERIFIED`，不得自行选择或改写参数 |
+| `deployment.kv_transfer.connector` | 必填，值必须随镜像 tag 一起给出：以本镜像注册表中存在且可加载的 connector 为准；执行方只做只读确认，确认不了记 `UNVERIFIED`，不得自行选择或改写参数。connector 名与私有键是目标镜像/版本的属性，不是单机/双机拓扑的属性；不得按拓扑或示例推断 |
 | `deployment.instances` | 至少 1 `prefill` + 1 `decode` + **恰好 1** `proxy`；`prefill`/`decode` 的 `ports` 为 `{http, kv}`，`proxy` 为 `{http}` |
 | `deployment.instances.<prefill\|decode>.launch.engine_id` | **必填**（`preserve_reference=true` 时缺了会被 topology 校验拒绝），值 = `deployment.id-instance.id`，例如 `case-pd-deploy-only-01-prefill` / `case-pd-deploy-only-01-decode`；必须与 `launch.kv_transfer_config.engine_id` 一致 |
 | `deployment.endpoint` | 必须指向 `proxy` |
@@ -30,7 +30,7 @@
 
 两侧 `model_paths` 各自独立，可以不同；`prefill`/`decode` 设备数必须相同。
 
-示例 JSON 里的 connector 是占位值（Mooncake 系镜像常见），复制后必须换成该镜像的真实 connector 再 `validate-top-input`。
+示例 JSON 里的 connector 是结构占位（`REPLACE_WITH_REGISTRY_CONNECTOR`，历史示例曾用 `MooncakeHybridConnector`），不代表任何现场验证结果；不同镜像注册的 connector（如 `MooncakeConnectorV1`）不同，复制后必须替换为目标镜像注册表中真实可加载的 connector 再 `validate-top-input`。connector 私有键同理，只能来自该镜像的参考启动配置。
 
 ## 步骤
 

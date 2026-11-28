@@ -39,6 +39,11 @@ draft-review 生成摘要，审阅通过后形成 review.json，再执行 freeze
 每次源码修改先重新 package-runtime，再重新审阅/冻结；runtime_sha256 与
 bundle_sha256 必须匹配。保留原始用户参数与授权证据，不手工改冻结目录。
 
+PD 部署在冻结前还要在两侧节点的镜像内分别只读确认 `deployment.kv_transfer.connector`
+已注册且可加载（两节点镜像可能不同）；connector 名与私有键随镜像/版本变化，不能沿用其他现场或示例值。
+参考启动配置带的 connector 私有键必须与 `compiled.json` 逐键一致；核验不了记
+`UNVERIFIED` 并回问派单方，不用猜测值冻结。
+
 publish.json 的字段：task_ref、runtime_archive、input_directory、
 runtime_sha256、bundle_sha256。control.json 的 tasks[TASK] 包含 host、root、
 allowed_root、绝对 python 路径；附加节点放在 nodes[SLOT]，同样包含上述字段。
@@ -77,6 +82,7 @@ wait-event 的 after-seq 只使用实际交付的 next_cursor。
 | 场景 | 要求 |
 | --- | --- |
 | 发布/启动 | 摘要匹配；detached Python process 与 socket 身份匹配；同 nonce 不重复启动 |
+| PD KV 配置 | connector 在每个节点镜像的注册表中存在且可加载；两侧 `kv_transfer_config` 的 `kv_connector`/`kv_role`/`kv_port`/`engine_id` 与拓扑一致；私有键来自参考配置并原样出现在 `compiled.json` 和启动 argv |
 | existing 设备编号 | `placement.devices`/`npu_ids` 始终是宿主物理号；借用容器重编号时 bindings 必须声明 `container.device_id_map`。`self` 节点未声明却在本地 `npu-smi info -m` 中发现重编号时，`check-ready` 直接返回 `DEVICE_ID_MAP_REQUIRED`（`BLOCKED`，不发布、不启动）。create 在占用探测后、启动前用容器内 `npu-smi info -m` 逐卡核对，证据写 `probes/<digest([command_id,'device-map'])>.json`；声明不符或未声明却检测到重编号即 `RECOVERY_REQUIRED`，`-m` 不可用且未声明时按旧行为放行并记 inconclusive。这类拒绝发生在首个副作用之前，claims 会被释放、cleanup_status=VERIFIED，可按失败收尾并 stop-runtime |
 | 短阶段/长阶段 | 返回边界，或 RUNNING 后按游标得到边界 |
 | 观察中断 | 结束 client/SSH 后 runtime 仍在；重连无重复模型容器 |

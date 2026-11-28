@@ -4,6 +4,7 @@ The summary is a projection: it never writes task state and never replaces the
 authoritative service/state/journal artifacts. Callers use it to see every
 phase, its evidence and the core values without parsing token streams.
 """
+import re
 from pathlib import Path
 from .json_io import load_json
 from .protocol import ProtocolError, envelope, now
@@ -15,9 +16,25 @@ PHASES = ('prepare-inputs', 'package-runtime', 'draft-review', 'freeze-inputs',
 ALIASES = {'freeze': 'freeze-inputs', 'freeze_inputs': 'freeze-inputs',
            'deploy-service': 'deploy', 'evaluation': 'eval', 'stop': 'stop-runtime'}
 # Actions that never run a phase; absence is expected, not an unknown outcome.
-NOT_APPLICABLE = {'eval_only': ('deploy', 'release'), 'deploy_only': ('eval',)}
+NOT_APPLICABLE = {'eval_only': ('deploy', 'release'), 'deploy_only': ('eval',),
+                  # deploy_and_eval assembles plan/bindings itself, so it never
+                  # runs the prepare-inputs phase.
+                  'deploy_and_eval': ('prepare-inputs',)}
 MAX_JSON = 1048576
 MAX_PROGRESS = 262144
+MODEL_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+MODEL_ID_UNSAFE = re.compile(r'[^A-Za-z0-9_-]')
+
+
+def _normalize_model_id(name):
+    """Derive a schema-safe technical id from a free-form served model name.
+
+    Existing-service evaluation only carries the display name. Dots are legal
+    on the wire but not in deployment ids, so the summary keeps the display
+    name in ``model`` and derives a stable id for ``model_id``.
+    """
+    value = MODEL_ID_UNSAFE.sub('-', name).lstrip('-_')
+    return value if value and MODEL_ID.match(value) else None
 
 
 def _read(path, errors=None):
@@ -100,6 +117,8 @@ def _task_identity(plan, compiled, bindings, top_input, errors):
     served = (plan.get('service') or {}).get('model')
     served = served if isinstance(served, str) and served else None
     topology = compiled.get('topology') or {}
+    service_endpoint = (plan.get('service') or {}).get('endpoint')
+    service_endpoint = service_endpoint if isinstance(service_endpoint, str) and service_endpoint else None
     groups = topology.get('groups') or {}
     roles = {item.get('role') for item in deployment.get('instances') or []
              if isinstance(item, dict)}
@@ -122,14 +141,22 @@ def _task_identity(plan, compiled, bindings, top_input, errors):
             device_map=group.get('device_map'), health_urls=group.get('health_urls'))))
     if not model.get('id') and not compiled.get('model') and not served:
         errors.append('model identity not derivable')
+    # ``model`` is the effective served name; ``model_id`` is always the
+    # schema-safe technical id and never the free-form display name.
+    model_id = compiled.get('model_id') or model.get('id')
+    if not model_id and served:
+        model_id = _normalize_model_id(served)
+    name = compiled.get('model') or model.get('served_name') or served or model_id
+    if model_id is not None and not MODEL_ID.match(str(model_id)):
+        errors.append('model_id is not a valid technical id: ' + str(model_id))
     return _compact(dict(
         id=plan.get('task_id'), action=top_input.get('action'),
         topology=('pd' if roles & {'prefill', 'decode'} else 'colocated' if roles else None),
         runtime_mode=runtime.get('mode'),
         deployment_id=deployment.get('id'),
-        model=compiled.get('model') or model.get('served_name') or model.get('id') or served,
-        model_id=compiled.get('model_id') or model.get('id') or served,
-        endpoint=topology.get('endpoint'),
+        model=name,
+        model_id=model_id,
+        endpoint=topology.get('endpoint') or service_endpoint,
         connector=(deployment.get('kv_transfer') or {}).get('connector'),
         node_count=len(groups) or len(nodes) or None,
         nodes=nodes))
@@ -189,7 +216,7 @@ def _operations(root, errors):
     return rows
 
 
-def _phases(root, frozen_ready, operations, action=None):
+def _phases(root, frozen_ready, operations, action=None, notes=None):
     latest, attempts = _progress(root/'progress.log')
     skipped = NOT_APPLICABLE.get(action or '', ())
     artifact = {}
@@ -220,13 +247,13 @@ def _phases(root, frozen_ready, operations, action=None):
             detail['operations'] = [item['operation_id'] for item in operations
                                     if item['kind'] == name]
         phases.append(dict(name=name, status=status, detail=_compact(detail)))
-    for name, row in latest.items():
-        if name not in PHASES:
-            phases.append(dict(name=name, status='succeeded' if row['rc'] == 0 else 'failed',
-                               detail=dict(source='progress.log', rc=row['rc'],
-                                           elapsed_seconds=row['elapsed_seconds'],
-                                           time=row['time'],
-                                           attempts=attempts.get(name, 1))))
+    # The phase list is a fixed contract. Names outside it are a skill-side
+    # vocabulary error, not new phases; surface them without inflating phases.
+    extra = sorted(name for name in latest if name not in PHASES)
+    if extra and notes is not None:
+        shown = ', '.join(extra[:4])
+        notes.append('progress.log uses non-canonical phase names: ' + shown +
+                     (', ...' if len(extra) > 4 else ''))
     return phases
 
 
@@ -305,7 +332,7 @@ def summarize(binding, task, *, status=None, status_error=None):
     response['schema_version'] = SCHEMA_VERSION
     response['summary'] = dict(
         task=identity, state=state,
-        phases=_phases(root, bool(folder), operations, top_input.get('action')),
+        phases=_phases(root, bool(folder), operations, top_input.get('action'), errors),
         operations=operations, service=service, evaluation=evaluation,
         cleanup=cleanup, limitations=errors[:8], updated_at=now())
     return response

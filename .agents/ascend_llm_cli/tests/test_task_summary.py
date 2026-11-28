@@ -36,7 +36,7 @@ BINDINGS = {
 COMPILED = {
     'schema_version': '1.0', 'model': 'Qwen3-0.6B', 'model_id': 'qwen3-06b',
     'topology': {
-        'endpoint': {'host': '179.165.1.3', 'port': 18080},
+        'endpoint': 'http://179.165.1.3:18080',
         'groups': {
             'n1': {'node': 'n1', 'self': True, 'npu_ids': [0], 'ports': [8020, 18080],
                    'health_urls': ['http://179.165.1.3:18080/healthcheck'],
@@ -116,6 +116,7 @@ class TaskSummaryTests(unittest.TestCase):
         task = summary['task']
         self.assertEqual(task['model'], 'Qwen3-0.6B')
         self.assertEqual(task['model_id'], 'qwen3-06b')
+        self.assertEqual(task['endpoint'], 'http://179.165.1.3:18080')
         self.assertEqual(task['connector'], 'MooncakeConnectorV1')
         self.assertEqual(task['topology'], 'pd')
         self.assertEqual(task['runtime_mode'], 'existing_container')
@@ -153,8 +154,11 @@ class TaskSummaryTests(unittest.TestCase):
             response = summarize(binding(root), 't')
         summary = response['summary']
         task = summary['task']
+        # The display name keeps its dots; the technical id stays schema-safe.
         self.assertEqual(task['model'], 'qwen3-0.6b')
-        self.assertEqual(task['model_id'], 'qwen3-0.6b')
+        self.assertEqual(task['model_id'], 'qwen3-0-6b')
+        # Without compiled topology the endpoint comes from the external service.
+        self.assertEqual(task['endpoint'], 'http://179.165.1.3:18080')
         self.assertEqual(task['action'], 'eval_only')
         self.assertEqual(summary['limitations'], [])
         phases = {item['name']: item for item in summary['phases']}
@@ -198,6 +202,42 @@ class TaskSummaryTests(unittest.TestCase):
         phases = {item['name']: item for item in summary['phases']}
         self.assertEqual(phases['deploy']['status'], 'succeeded')
         self.assertEqual(phases['eval']['status'], 'not_applicable')
+
+    def test_deploy_and_eval_marks_prepare_inputs_not_applicable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)/'t'
+            write(root/'frozen/plan.json', PLAN)
+            write(root/'frozen/bindings.json', BINDINGS)
+            write(root/'frozen/compiled.json', COMPILED)
+            write(root/'frozen/review.json', {'status': 'APPROVED'})
+            write(root/'top_input.json', {'action': 'deploy_and_eval'})
+            (root/'progress.log').write_text(
+                'PHASE deploy 0 60.0 2026-11-26T00:00:00Z\n', encoding='utf-8')
+            response = summarize(binding(root), 't')
+        phases = {item['name']: item for item in response['summary']['phases']}
+        self.assertEqual(phases['prepare-inputs']['status'], 'not_applicable')
+        self.assertEqual(phases['prepare-inputs']['detail']['source'], 'action')
+
+    def test_non_canonical_phase_names_stay_out_of_phases(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)/'t'
+            fixtures(root)
+            (root/'progress.log').write_text('\n'.join([
+                'PHASE init 0 0.2 2026-11-26T00:00:00Z',
+                'PHASE deploy-submit 0 0.1 2026-11-26T00:00:01Z',
+                'PHASE deploy-pending 0 0.1 2026-11-26T00:00:02Z',
+                'PHASE deploy 0 60.0 2026-11-26T00:00:03Z',
+            ]) + '\n', encoding='utf-8')
+            response = summarize(binding(root), 't')
+        summary = response['summary']
+        names = [item['name'] for item in summary['phases']]
+        self.assertEqual(len(names), 11)
+        self.assertNotIn('init', names)
+        self.assertEqual(summary['phases'][0]['name'], 'prepare-inputs')
+        self.assertTrue(any('non-canonical phase names' in item
+                            for item in summary['limitations']))
+        phases = {item['name']: item for item in summary['phases']}
+        self.assertEqual(phases['deploy']['status'], 'succeeded')
 
     def test_missing_inputs_and_failed_phase_stay_visible(self):
         with tempfile.TemporaryDirectory() as folder:

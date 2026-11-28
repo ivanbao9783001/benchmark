@@ -104,6 +104,8 @@ prepare-inputs（deploy_only / eval_only）
 PHASE <阶段> <rc> <耗时秒> <UTC 时间>
 ```
 
+阶段名只能是：`prepare-inputs`、`package-runtime`、`draft-review`、`freeze-inputs`、`check-ready`、`publish-task`、`start-task`、`deploy`、`eval`、`release`、`stop-runtime`。每个阶段只在结束时写一行终态（成功或失败各一次），不写 `init`、`*-submit`、`*-pending` 等中间态；提交/等待事件属于阶段内部步骤，不单独记阶段。`task-summary` 只认这份枚举，其他名字进 `limitations`，不扩充 `phases`。
+
 ## 7. 权威文件与硬约束
 
 | 主题 | 权威 |

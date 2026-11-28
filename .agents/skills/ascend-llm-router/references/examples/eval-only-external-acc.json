@@ -8,7 +8,7 @@
   },
   "nodes": {
     "n1": {
-      "host": "example@192.0.2.41",
+      "host": "node-02.example",
       "allowed_root": "/srv/work",
       "python": "/srv/venvs/deploy-eval/bin/python",
       "network": {"ip": "192.0.2.41", "interface": "eth0"},
@@ -21,12 +21,11 @@
   },
   "evaluation": {
     "service": {
-      "service_id": "svc-gpqa-eval",
       "endpoint": "http://192.0.2.41:8020",
       "model": "qwen3-8b"
     },
     "tester": {
-      "host": "example@192.0.2.41",
+      "host": "node-02.example",
       "work_root": "/srv/work",
       "python": "/workspace/venvs/aisbench/bin/python",
       "aisbench": "/workspace/venvs/aisbench/bin/ais_bench",

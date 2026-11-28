@@ -163,7 +163,9 @@ def check_example(data):
     if data["task"]["action"] in EVAL_ACTIONS:
         hosts.append(data["evaluation"]["tester"]["host"].split("@")[-1])
     for host in hosts:
-        assert host.startswith("192.0.2."), "example host must be illustrative: " + host
+        # Illustrative only: TEST-NET-1 IPs or RFC 2606 ``.example`` hostnames.
+        assert (host.startswith("192.0.2.") or host.endswith(".example")), \
+            "example host must be illustrative: " + host
 
 
 class TopInputDocTest(unittest.TestCase):

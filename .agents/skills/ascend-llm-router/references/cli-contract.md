@@ -52,9 +52,9 @@ python -m deploy_eval_v2 --config control.json task-summary --task-ref task-1
 
 `task-summary` 从交付根产物、`progress.log` 与 `get-status` 合成 `task-summary/1`，供外层监控和验收直接读取，不解析模型 token 流：
 
-- `task`：action、topology、runtime_mode、`model`/`model_id`、endpoint、connector、节点（container、npu、ports、`device_map`）。
+- `task`：action、topology、runtime_mode、`model`/`model_id`、endpoint、connector、节点（container、npu、ports、`device_map`）。`model` 是生效的 served 名（可含点号），`model_id` 恒为 `^[A-Za-z0-9][A-Za-z0-9_-]*$` 的技术 id；外部已有服务只给 `service.model` 时，`model_id` 取其规范化结果（如 `granite-4.2-3b` → `granite-4-2-3b`）。
 - `state`：`source=get-status|unavailable|none`；取不到状态时仍返回成功，并在 `limitations` 留痕。
-- `phases`：固定阶段名；有 `progress.log` 心跳时以心跳 rc 为准，否则取 `results/<op>/stage-result.json` 的产物状态，两者都没有记 `unknown`；动作本身不经过的阶段记 `not_applicable`（如 `eval_only` 的 `deploy`/`release`、`deploy_only` 的 `eval`），`detail.source=action`。
+- `phases`：固定 11 个阶段名；有 `progress.log` 心跳时以心跳 rc 为准，否则取 `results/<op>/stage-result.json` 的产物状态，两者都没有记 `unknown`；动作本身不经过的阶段记 `not_applicable`（如 `eval_only` 的 `deploy`/`release`、`deploy_only` 的 `eval`、`deploy_and_eval` 的 `prepare-inputs`），`detail.source=action`。`progress.log` 里的非枚举名字（`init`、`*-submit`、`*-pending` 等）不扩充 `phases`，只在 `limitations` 留痕。
 - `operations`：deploy / eval / release 的摘要与证据引用；`service`、`evaluation`、`cleanup` 是从中提取的投影。
 - `limitations`：冻结缺失、状态不可达、心跳缺失等。
 

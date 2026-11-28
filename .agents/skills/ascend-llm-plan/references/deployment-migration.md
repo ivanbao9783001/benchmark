@@ -22,6 +22,14 @@
 
 完整KV JSON可放launch.kv_transfer_config，保留所有参考键和值，仅将现场绑定值换为上述占位符；不得只保留connector名称。模型launch以preserve_reference语义编译：不隐式增加性能环境默认值；部署拓扑仍管理设备可见性、HTTP/RPC地址端口、served model和KV一致性。显式参数与绑定冲突会拒绝冻结；不要用删参数解决冲突。布尔true产生--key，false产生--no-key；例如参考--no-disable-hybrid-kv-cache-manager对应disable-hybrid-kv-cache-manager=false。JSON对象/list参数保持结构，最终作为一个JSON argv值传递。
 
+### PD KV 参数集与镜像核验
+
+connector 名和 connector 私有参数是**目标镜像的属性**，不是跨版本常量：不同 vLLM / vllm-ascend 版本可能注册 `MooncakeConnector`、`MooncakeConnectorV1`、`MooncakeHybridConnector` 等不同实现，私有键也不同（例如有的版本用 `kv_connector_extra_config.prefill/decode`，有的版本用平铺的 `kv_rank`/`kv_buffer_device`/`kv_parallel_size`）。实际值以派单随镜像 tag 给出的 connector + 目标节点镜像注册表为准，不得把其他现场或示例里的名字当通用值。
+
+通用骨架固定为 `kv_connector`/`kv_role`/`kv_port`/`engine_id` 四键，`kv_connector_extra_config` 可选。只给 connector 名时，CLI 只合成与具体 connector 无关的 `prefill/decode` dp/tp，不注入任何 connector 私有键。私有键必须来自已确认的参考启动配置或派单明确值，原样进入 `launch.kv_transfer_config`，并随 `compiled.json` 暴露给审阅；不得按示例或经验自造。
+
+冻结前在 PD 两侧节点的镜像内分别做只读核验（两个节点镜像可能不同）：确认 `deployment.kv_transfer.connector` 在该节点已注册且可加载，参考配置中的私有键与该侧 `compiled.json` 逐键一致。任一侧核验不了记 `UNVERIFIED` 并回问派单方，禁止用猜测值冻结。
+
 placement.devices是物理设备ID；同一物理主机只使用一个node身份，各模型实例设备集合不可重叠。实例ports值是端口跨度宽度，bindings同名值是基址，所有跨度必须无冲突；不要将基址误写成跨度。
 
 ### 容器设备与挂载的实际契约
